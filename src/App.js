@@ -51,11 +51,7 @@ const LIVREURS_INIT = [
   { id:"L1", nom:"Kofi A.", tel:"+228 91 11 22 33", actif:true, courses:0 },
 ];
 
-const COMMANDES_INIT = [
-  { id:"JK-001", client:"Aminata D.", tel:"+228 90 11 22 33", poids:3.2, poidsStatut:"confirmed", tarifId:1, tarif:600, total:1920, statut:"Prêt",     date:"20 mai", points:19, paiement:"flooz",  livraison:null,    adresse:"", livraisonStatut:null, livreurNom:null, livreurTel:null, paiementConfirme:true  },
-  { id:"JK-002", client:"Moussa K.",  tel:"+228 91 44 55 66", poids:5.0, poidsStatut:"estimated", tarifId:2, tarif:800, total:4500, statut:"En cours", date:"20 mai", points:45, paiement:"tmoney", livraison:"depot", adresse:"Adidogomé", livraisonStatut:"pending", livreurNom:null, livreurTel:null, paiementConfirme:false },
-  { id:"JK-003", client:"Fatou B.",   tel:"+228 92 77 88 99", poids:2.1, poidsStatut:"confirmed", tarifId:1, tarif:600, total:1260, statut:"Récupéré", date:"19 mai", points:13, paiement:"cash",   livraison:null,    adresse:"", livraisonStatut:null, livreurNom:null, livreurTel:null, paiementConfirme:true  },
-];
+const COMMANDES_INIT = [];
 
 const LEVEL_SEUILS = [
   { label:"Bronze",   min:0,   max:99,       color:"#CD7F32" },
@@ -1291,6 +1287,134 @@ function HistoriqueFactures({ commandes, tarifs }) {
   );
 }
 
+
+// ─── BASE DE DONNÉES CLIENTS ──────────────────────────────
+function ClientsDB({ commandes }) {
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+
+  const BLU="#1A3EBD", BLU2="#4A7BF7", CYAN="#00C2FF", CARD="#0D1F6E22", BDR="#1A3EBD44", DARK="#060D1F";
+
+  // Build client list from commandes
+  const clientMap = {};
+  commandes.forEach(c => {
+    const key = c.tel || c.client;
+    if (!clientMap[key]) {
+      clientMap[key] = {
+        nom: c.client,
+        tel: c.tel || "—",
+        commandes: [],
+        totalDepense: 0,
+        points: 0,
+      };
+    }
+    clientMap[key].commandes.push(c);
+    if (c.paiementConfirme) clientMap[key].totalDepense += (c.total || 0);
+    clientMap[key].points = Math.max(clientMap[key].points, c.points || 0);
+  });
+
+  const clients = Object.values(clientMap).sort((a,b) => b.totalDepense - a.totalDepense);
+  const filtered = clients.filter(c =>
+    c.nom.toLowerCase().includes(search.toLowerCase()) ||
+    c.tel.includes(search)
+  );
+
+  function getLevel(pts) {
+    if (pts >= 600) return { label:"Platinum", color:"#E0E0FF" };
+    if (pts >= 300) return { label:"Gold",     color:"#FFD700" };
+    if (pts >= 100) return { label:"Silver",   color:"#C0C0C0" };
+    return { label:"Bronze", color:"#CD7F32" };
+  }
+
+  if (selected) {
+    const lvl = getLevel(selected.points);
+    return (
+      <div style={{padding:"0 0 80px"}}>
+        <div style={{padding:"16px 20px",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${BDR}`}}>
+          <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:22}}>←</button>
+          <div>
+            <p style={{fontWeight:700,fontSize:17,color:"#F8FAFF"}}>{selected.nom}</p>
+            <p style={{fontSize:12,color:"#8892B0"}}>{selected.tel}</p>
+          </div>
+          <span style={{marginLeft:"auto",background:lvl.color+"33",color:lvl.color,borderRadius:99,padding:"4px 12px",fontSize:11,fontWeight:700}}>{lvl.label}</span>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,padding:"16px 20px"}}>
+          {[
+            {l:"Commandes",  v:selected.commandes.length,         c:BLU2},
+            {l:"Total dépensé", v:selected.totalDepense.toLocaleString("fr-FR")+" F", c:CYAN},
+            {l:"Points",     v:selected.points,                   c:"#FFD700"},
+          ].map(s=>(
+            <div key={s.l} style={{background:CARD,borderRadius:14,padding:12,border:`1px solid ${BDR}`,textAlign:"center"}}>
+              <p style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}</p>
+              <p style={{fontSize:10,color:"#8892B0",marginTop:4}}>{s.l}</p>
+            </div>
+          ))}
+        </div>
+
+        <div style={{padding:"0 20px"}}>
+          <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,letterSpacing:2,marginBottom:10,color:"#F8FAFF"}}>Historique des commandes</p>
+          {selected.commandes.slice().reverse().map(c=>(
+            <div key={c.id} style={{background:CARD,borderRadius:14,padding:"12px 16px",marginBottom:10,border:`1px solid ${BDR}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontWeight:700,color:BLU2,fontSize:13}}>{c.id}</span>
+                <span style={{fontSize:12,color:"#8892B0"}}>{c.date}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,color:c.statut==="Récupéré"?"#4ADE80":c.statut==="Prêt"?CYAN:"#8892B0"}}>{c.statut}</span>
+                <span style={{fontSize:15,fontWeight:700,color:"#F8FAFF"}}>{(c.total||0).toLocaleString("fr-FR")} F</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{padding:"20px 20px 80px",animation:"fadeIn 0.4s ease"}}>
+      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Clients ({clients.length})</h2>
+
+      <div style={{position:"relative",marginBottom:16}}>
+        <input
+          value={search}
+          onChange={e=>setSearch(e.target.value)}
+          placeholder="Rechercher par nom ou téléphone…"
+          style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"12px 16px",color:"#F8FAFF",fontSize:14,outline:"none"}}
+        />
+      </div>
+
+      {filtered.length===0&&(
+        <p style={{color:"#8892B0",textAlign:"center",marginTop:40}}>
+          {clients.length===0 ? "Aucun client pour l'instant. Les clients apparaîtront automatiquement après leurs commandes." : "Aucun résultat."}
+        </p>
+      )}
+
+      {filtered.map(c=>{
+        const lvl = getLevel(c.points);
+        const derniere = c.commandes[c.commandes.length-1];
+        return (
+          <button key={c.tel+c.nom} onClick={()=>setSelected(c)} style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:16,padding:"14px 16px",marginBottom:10,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:44,height:44,borderRadius:12,background:`${BLU}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <p style={{fontWeight:700,color:"#F8FAFF",fontSize:15}}>{c.nom}</p>
+                <span style={{fontSize:10,color:lvl.color,fontWeight:700,background:lvl.color+"22",borderRadius:99,padding:"2px 8px"}}>{lvl.label}</span>
+              </div>
+              <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>{c.tel}</p>
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+                <span style={{fontSize:12,color:CYAN}}>{c.commandes.length} commande{c.commandes.length>1?"s":""}</span>
+                <span style={{fontSize:12,color:"#FFD700"}}>{c.totalDepense.toLocaleString("fr-FR")} F</span>
+              </div>
+            </div>
+            <span style={{color:"#8892B0",fontSize:20}}>›</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,onLogout }){
   const [tab,setTab]=useState("home");
@@ -1311,7 +1435,7 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
   const tabs=[
     {id:"home",      icon:"🏠",label:"Accueil"},
     {id:"commandes", icon:"📋",label:"Commandes"},
-    {id:"livraisons",icon:"🛵",label:"Livreurs"},
+    {id:"clients",   icon:"👥",label:"Clients"},
     {id:"caisse",    icon:"💰",label:"Caisse"},
     {id:"plus",      icon:"⚙️",label:"Plus"},
   ];
@@ -1406,6 +1530,11 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
       )}
       {tab==="reglages"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Reglages gerantPin={gerantPin} setGerantPin={setGerantPin} adminPw={adminPw} setAdminPw={setAdminPw} /></div>
+      )}
+
+
+      {tab==="clients"&&(
+        <ClientsDB commandes={commandes} />
       )}
 
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${BDR}`,display:"flex",justifyContent:"space-around",padding:"10px 0 18px",zIndex:100}}>
