@@ -1435,7 +1435,7 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
   const tabs=[
     {id:"home",      icon:"🏠",label:"Accueil"},
     {id:"commandes", icon:"📋",label:"Commandes"},
-    {id:"clients",   icon:"👥",label:"Clients"},
+    {id:"livraisons",icon:"🛵",label:"Livreurs"},
     {id:"caisse",    icon:"💰",label:"Caisse"},
     {id:"plus",      icon:"⚙️",label:"Plus"},
   ];
@@ -1497,6 +1497,8 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
           {[
+            {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
+            {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
             {id:"tarifs",    icon:"💲", label:"Gérer les tarifs",      sub:"Modifier les prix et services"},
             {id:"fidelite",  icon:"🏅", label:"Programme fidélité",    sub:"Gérer les points clients"},
             {id:"recompenses",icon:"🎁",label:"Récompenses",           sub:"Modifier les récompenses"},
@@ -1528,13 +1530,11 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
       {tab==="factures"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><HistoriqueFactures commandes={commandes} tarifs={tarifs} /></div>
       )}
+      {tab==="clients"&&(
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} /></div>
+      )}
       {tab==="reglages"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Reglages gerantPin={gerantPin} setGerantPin={setGerantPin} adminPw={adminPw} setAdminPw={setAdminPw} /></div>
-      )}
-
-
-      {tab==="clients"&&(
-        <ClientsDB commandes={commandes} />
       )}
 
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${BDR}`,display:"flex",justifyContent:"space-around",padding:"10px 0 18px",zIndex:100}}>
