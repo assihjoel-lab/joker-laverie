@@ -43,11 +43,7 @@ const REWARDS_INIT = [
   { id:4, label:"Sac JOKER",       desc:"Sac à linge",       pts:80,  emoji:"👜", color:"#FFB800" },
 ];
 
-const FRIPERIE_INIT = [
-  { id:1, nom:"Chemise Oxford", taille:"L",  prix:2500, etat:"Excellent", emoji:"👔" },
-  { id:2, nom:"Jean slim noir", taille:"M",  prix:3000, etat:"Bon",       emoji:"👖" },
-  { id:3, nom:"Robe fleurie",   taille:"S",  prix:2000, etat:"Très bon",  emoji:"👗" },
-];
+const FRIPERIE_INIT = [];
 
 const LIVREURS_INIT = [];
 
