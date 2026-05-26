@@ -752,29 +752,21 @@ function GestionRecompenses({ rewards,setRewards }){
 }
 
 // ─── FRIPERIE ─────────────────────────────────────────────
-function Friperie({ friperie,setFriperie }){
-  const [show,    setShow]    = useState(false);
-  const [editId,  setEditId]  = useState(null);
-  const [editPrix,setEditPrix]= useState("");
-  const [msg,     setMsg]     = useState("");
-  const [form,    setForm]    = useState({nom:"",taille:"M",prix:"",etat:"Excellent",emoji:"👕",photo:null});
+function Friperie({ friperie, setFriperie }){
+  const [show,     setShow]    = useState(false);
+  const [editId,   setEditId]  = useState(null);
+  const [editPrix, setEditPrix]= useState("");
+  const [msg,      setMsg]     = useState("");
+  const [form,     setForm]    = useState({nom:"",taille:"M",prix:"",etat:"Excellent",emoji:"👕",photo:""});
 
-  function flash(m){ setMsg(m); setTimeout(()=>setMsg(""),2000); }
+  const WA_NUM = "22879621085";
 
-  function handlePhoto(e, id=null){
-    const file=e.target.files[0]; if(!file) return;
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      if(id) setFriperie(p=>p.map(x=>x.id===id?{...x,photo:ev.target.result}:x));
-      else   setForm(p=>({...p,photo:ev.target.result}));
-    };
-    reader.readAsDataURL(file);
-  }
+  function flash(m){ setMsg(m); setTimeout(()=>setMsg(""),2500); }
 
   function ajouter(){
     if(!form.nom||!form.prix) return;
     setFriperie(p=>[...p,{...form,id:Date.now(),prix:parseInt(form.prix)}]);
-    setForm({nom:"",taille:"M",prix:"",etat:"Excellent",emoji:"👕",photo:null});
+    setForm({nom:"",taille:"M",prix:"",etat:"Excellent",emoji:"👕",photo:""});
     setShow(false); flash("✅ Article ajouté !");
   }
 
@@ -782,6 +774,11 @@ function Friperie({ friperie,setFriperie }){
     const p=parseInt(editPrix); if(!p||p<=0) return;
     setFriperie(prev=>prev.map(x=>x.id===id?{...x,prix:p}:x));
     setEditId(null); setEditPrix(""); flash("✅ Prix mis à jour !");
+  }
+
+  function commanderWA(item){
+    const msg = `Bonjour JOKER Laverie ! 👋%0A%0AJe suis intéressé(e) par cet article :%0A%0A👗 *${item.nom}*%0A📏 Taille : ${item.taille}%0A✨ État : ${item.etat}%0A💰 Prix : ${item.prix.toLocaleString("fr-FR")} FCFA%0A%0AEst-il encore disponible ?`;
+    window.open(`https://wa.me/${WA_NUM}?text=${msg}`, "_blank");
   }
 
   return (
@@ -798,22 +795,25 @@ function Friperie({ friperie,setFriperie }){
         <div style={{background:CARD,borderRadius:20,padding:18,marginBottom:14,border:`1px solid ${BDR}`,animation:"fadeIn 0.3s ease"}}>
           <p style={{fontWeight:700,fontSize:15,color:BLU2,marginBottom:12}}>Nouvel article</p>
 
-          {/* Photo */}
-          <label style={{display:"block",marginBottom:12,cursor:"pointer"}}>
-            <div style={{width:"100%",height:140,borderRadius:14,background:form.photo?"transparent":DARK,border:`2px dashed ${form.photo?BLU2:BDR}`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden"}}>
-              {form.photo
-                ? <img src={form.photo} alt="preview" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:12}} />
-                : <div style={{textAlign:"center"}}><p style={{fontSize:32,marginBottom:6}}>📸</p><p style={{color:"#8892B0",fontSize:13}}>Appuyer pour ajouter une photo</p></div>
-              }
-            </div>
-            <input type="file" accept="image/*" onChange={e=>handlePhoto(e)} style={{display:"none"}} />
-          </label>
+          {/* URL Photo */}
+          <div style={{marginBottom:12}}>
+            <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Lien photo (URL)</p>
+            <input
+              value={form.photo}
+              onChange={e=>setForm(p=>({...p,photo:e.target.value}))}
+              placeholder="https://... (coller le lien de la photo)"
+              style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none"}}
+            />
+            {form.photo&&(
+              <img src={form.photo} alt="preview" style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,marginTop:8}} onError={e=>e.target.style.display="none"} />
+            )}
+          </div>
 
-          {[{k:"nom",ph:"Nom de l'article"},{k:"prix",ph:"Prix en FCFA"}].map(f=>(
-            <input key={f.k} value={form[f.k]} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))} placeholder={f.ph} style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+          {[{k:"nom",ph:"Nom de l'article"},{k:"prix",ph:"Prix en FCFA",type:"number"}].map(f=>(
+            <input key={f.k} type={f.type||"text"} value={form[f.k]} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))} placeholder={f.ph}
+              style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
           ))}
 
-          {/* Taille */}
           <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Taille</p>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             {["XS","S","M","L","XL","XXL"].map(sz=>(
@@ -821,7 +821,6 @@ function Friperie({ friperie,setFriperie }){
             ))}
           </div>
 
-          {/* État */}
           <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>État</p>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             {["Neuf","Excellent","Très bon","Bon"].map(e=>(
@@ -829,7 +828,6 @@ function Friperie({ friperie,setFriperie }){
             ))}
           </div>
 
-          {/* Emoji */}
           <div style={{display:"flex",gap:8,marginBottom:12}}>
             {["👕","👔","👗","👖","🧥","👜"].map(e=>(
               <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{background:form.emoji===e?`${BLU}40`:DARK,border:`1px solid ${form.emoji===e?BLU2:BDR}`,borderRadius:10,padding:"8px",fontSize:18,cursor:"pointer"}}>{e}</button>
@@ -840,7 +838,7 @@ function Friperie({ friperie,setFriperie }){
         </div>
       )}
 
-      {/* Liste */}
+      {/* Liste articles */}
       <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
         {friperie.length===0&&(
           <div style={{background:CARD,borderRadius:14,padding:24,textAlign:"center",border:`1px solid ${BDR}`}}>
@@ -851,26 +849,19 @@ function Friperie({ friperie,setFriperie }){
         {friperie.map(item=>(
           <div key={item.id} style={{background:CARD,borderRadius:20,border:`1px solid ${BDR}`,overflow:"hidden"}}>
             {/* Photo */}
-            <div style={{width:"100%",height:180,background:"#0A0F1E",position:"relative",overflow:"hidden"}}>
+            <div style={{width:"100%",height:200,background:"#0A0F1E",position:"relative",overflow:"hidden"}}>
               {item.photo
-                ? <img src={item.photo} alt={item.nom} style={{width:"100%",height:"100%",objectFit:"cover"}} />
-                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:64}}>{item.emoji}</div>
+                ? <img src={item.photo} alt={item.nom} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>e.target.style.display="none"} />
+                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:72}}>{item.emoji}</div>
               }
-              {/* Bouton changer photo */}
-              <label style={{position:"absolute",bottom:8,right:8,background:"rgba(6,13,31,0.88)",borderRadius:10,padding:"6px 12px",cursor:"pointer",border:`1px solid ${BDR}`,display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:14}}>📸</span>
-                <span style={{color:"#F8FAFF",fontSize:11,fontWeight:700}}>{item.photo?"Changer":"Ajouter photo"}</span>
-                <input type="file" accept="image/*" onChange={e=>handlePhoto(e,item.id)} style={{display:"none"}} />
-              </label>
               <span style={{position:"absolute",top:8,left:8,background:"rgba(6,13,31,0.88)",borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,color:CYAN}}>{item.etat}</span>
               <span style={{position:"absolute",top:8,right:8,background:`linear-gradient(135deg,${BLU},${BLU2})`,borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,color:"#fff"}}>{item.taille}</span>
             </div>
 
-            {/* Infos + actions */}
+            {/* Infos */}
             <div style={{padding:"14px 16px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                <p style={{fontWeight:700,fontSize:15}}>{item.nom}</p>
-                {/* Prix éditable */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                <p style={{fontWeight:700,fontSize:16,color:"#F8FAFF"}}>{item.nom}</p>
                 {editId===item.id ? (
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
                     <input type="number" value={editPrix} onChange={e=>setEditPrix(e.target.value)} autoFocus
@@ -885,6 +876,12 @@ function Friperie({ friperie,setFriperie }){
                   </button>
                 )}
               </div>
+
+              {/* Bouton WhatsApp */}
+              <button onClick={()=>commanderWA(item)} style={{width:"100%",background:"linear-gradient(135deg,#25D366,#128C7E)",border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                <span style={{fontSize:20}}>📲</span> Commander via WhatsApp
+              </button>
+
               <button onClick={()=>setFriperie(p=>p.filter(f=>f.id!==item.id))} style={{background:"none",border:"none",color:"#FF4444",fontSize:12,cursor:"pointer",fontWeight:600}}>🗑️ Retirer l'article</button>
             </div>
           </div>
@@ -893,6 +890,7 @@ function Friperie({ friperie,setFriperie }){
     </div>
   );
 }
+
 
 // ─── RÉGLAGES ─────────────────────────────────────────────
 function Reglages({ gerantPin,setGerantPin,adminPw,setAdminPw }){
