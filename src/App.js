@@ -877,11 +877,6 @@ function Friperie({ friperie, setFriperie }){
                 )}
               </div>
 
-              {/* Bouton WhatsApp */}
-              <button onClick={()=>commanderWA(item)} style={{width:"100%",background:"linear-gradient(135deg,#25D366,#128C7E)",border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                <span style={{fontSize:20}}>📲</span> Commander via WhatsApp
-              </button>
-
               <button onClick={()=>setFriperie(p=>p.filter(f=>f.id!==item.id))} style={{background:"none",border:"none",color:"#FF4444",fontSize:12,cursor:"pointer",fontWeight:600}}>🗑️ Retirer l'article</button>
             </div>
           </div>
@@ -1092,15 +1087,20 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
                 <span style={{position:"absolute",top:10,left:10,background:"rgba(6,13,31,0.88)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:700,color:CYAN}}>{item.etat}</span>
                 <span style={{position:"absolute",top:10,right:10,background:`linear-gradient(135deg,${BLU},${BLU2})`,borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700,color:"#fff"}}>{item.taille}</span>
               </div>
-              <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <p style={{fontWeight:700,fontSize:16}}>{item.nom}</p>
-                  <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>Taille {item.taille} · {item.etat}</p>
+              <div style={{padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <div>
+                    <p style={{fontWeight:700,fontSize:16}}>{item.nom}</p>
+                    <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>Taille {item.taille} · {item.etat}</p>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{color:CYAN,fontWeight:700,fontSize:22}}>{fmt(item.prix)} F</p>
+                    <p style={{fontSize:10,color:"#8892B0"}}>FCFA</p>
+                  </div>
                 </div>
-                <div style={{textAlign:"right"}}>
-                  <p style={{color:CYAN,fontWeight:700,fontSize:22}}>{fmt(item.prix)} F</p>
-                  <p style={{fontSize:10,color:"#8892B0"}}>FCFA</p>
-                </div>
+                <button onClick={()=>{const msg=`Bonjour JOKER Laverie ! 👋%0A%0AJe suis intéressé(e) par :%0A%0A👗 *${item.nom}*%0A📏 Taille : ${item.taille}%0A✨ État : ${item.etat}%0A💰 Prix : ${item.prix.toLocaleString("fr-FR")} FCFA%0A%0AEst-il encore disponible ?`;window.open(`https://wa.me/22879621085?text=${msg}`,"_blank");}} style={{width:"100%",background:"linear-gradient(135deg,#25D366,#128C7E)",border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <span style={{fontSize:20}}>📲</span> Commander via WhatsApp
+                </button>
               </div>
             </div>
           ))}
