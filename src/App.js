@@ -960,6 +960,7 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
   const [tab,setTab]=useState("suivi");
   const [rech,setRech]=useState("");
   const [res,setRes]=useState(null);
+  const [resAll,setResAll]=useState(null);
   const [notFound,setNotFound]=useState(false);
   const [showLiv,setShowLiv]=useState(false);
   const [livType,setLivType]=useState("recuperation");
@@ -968,8 +969,14 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
   const [sent,setSent]=useState(false);
 
   function chercher(){
-    const f=commandes.find(c=>c.id.toLowerCase()===rech.trim().toLowerCase()||c.client.toLowerCase().includes(rech.trim().toLowerCase()));
-    if(f){setRes(f);setNotFound(false);}else{setRes(null);setNotFound(true);}
+    const terme=rech.trim().toLowerCase();
+    // Chercher par N° exact d'abord
+    const exact=commandes.find(c=>c.id.toLowerCase()===terme);
+    if(exact){setRes(exact);setResAll(null);setNotFound(false);setShowLiv(false);setSent(false);return;}
+    // Sinon chercher toutes les commandes du client par nom ou tél
+    const all=commandes.filter(c=>c.client.toLowerCase().includes(terme)||(c.tel&&c.tel.includes(rech.trim())));
+    if(all.length>0){setResAll(all.slice().reverse());setRes(null);setNotFound(false);}
+    else{setResAll(null);setRes(null);setNotFound(true);}
     setShowLiv(false);setSent(false);
   }
   function demanderLiv(){
@@ -1000,6 +1007,29 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
             <button onClick={chercher} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px 16px",color:"#fff",fontWeight:700,fontSize:18,cursor:"pointer"}}>🔍</button>
           </div>
           {notFound&&<p style={{color:"#FF6B6B",fontSize:14,marginBottom:12}}>Aucune commande trouvée.</p>}
+          {resAll&&(
+            <div style={{marginBottom:16}}>
+              <p style={{fontSize:13,color:"#8892B0",marginBottom:10}}>
+                <span style={{color:BLU2,fontWeight:700}}>{resAll[0]?.client}</span> — {resAll.length} commande{resAll.length>1?"s":""}
+              </p>
+              {resAll.map(c=>(
+                <div key={c.id} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${statutColor[c.statut]||BLU2}40`,cursor:"pointer"}} onClick={()=>{setRes(c);setResAll(null);}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                    <span style={{fontWeight:700,color:BLU2,fontSize:13}}>{c.id}</span>
+                    <Badge statut={c.statut} />
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontSize:12,color:"#8892B0"}}>{c.date} · {c.poids}kg</span>
+                    <span style={{fontSize:13,fontWeight:700,color:"#F8FAFF"}}>{fmt(c.total)} F</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:11,color:c.paiementConfirme?"#4ADE80":"#FFB800"}}>{c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span>
+                    <span style={{fontSize:11,color:"#8892B0"}}>Tap pour détails →</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           {res&&(
             <div style={{background:CARD,borderRadius:20,padding:18,marginBottom:16,border:`1px solid ${statutColor[res.statut]||BLU2}40`}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
@@ -1347,11 +1377,12 @@ function ClientsDB({ commandes }) {
       <div style={{padding:"0 0 80px"}}>
         <div style={{padding:"16px 20px",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${BDR}`}}>
           <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:22}}>←</button>
-          <div>
+          <div style={{flex:1}}>
             <p style={{fontWeight:700,fontSize:17,color:"#F8FAFF"}}>{selected.nom}</p>
             <p style={{fontSize:12,color:"#8892B0"}}>{selected.tel}</p>
           </div>
-          <span style={{marginLeft:"auto",background:lvl.color+"33",color:lvl.color,borderRadius:99,padding:"4px 12px",fontSize:11,fontWeight:700}}>{lvl.label}</span>
+          {selected.tel!=="—"&&<button onClick={()=>window.open(`https://wa.me/${selected.tel.replace(/\D/g,"")}?text=${encodeURIComponent("🃏 Bonjour "+selected.nom+" ! Comment pouvons-nous vous aider ?")}`, "_blank")} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:10,padding:"8px 12px",color:"#25D366",fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0}}>💬 WA</button>}
+          <span style={{background:lvl.color+"33",color:lvl.color,borderRadius:99,padding:"4px 12px",fontSize:11,fontWeight:700,flexShrink:0}}>{lvl.label}</span>
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,padding:"16px 20px"}}>
@@ -1370,15 +1401,20 @@ function ClientsDB({ commandes }) {
         <div style={{padding:"0 20px"}}>
           <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,letterSpacing:2,marginBottom:10,color:"#F8FAFF"}}>Historique des commandes</p>
           {selected.commandes.slice().reverse().map(c=>(
-            <div key={c.id} style={{background:CARD,borderRadius:14,padding:"12px 16px",marginBottom:10,border:`1px solid ${BDR}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+            <div key={c.id} style={{background:CARD,borderRadius:14,padding:"14px 16px",marginBottom:10,border:`1px solid ${BDR}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                 <span style={{fontWeight:700,color:BLU2,fontSize:13}}>{c.id}</span>
-                <span style={{fontSize:12,color:"#8892B0"}}>{c.date}</span>
+                <span style={{fontSize:11,color:"#8892B0"}}>{c.date}</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                <span style={{fontSize:12,color:"#8892B0"}}>{c.poids}kg{c.poidsStatut==="estimated"?" (estimé)":""}</span>
+                <span style={{fontSize:14,fontWeight:700,color:"#F8FAFF"}}>{(c.total||0).toLocaleString("fr-FR")} F</span>
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:13,color:c.statut==="Récupéré"?"#4ADE80":c.statut==="Prêt"?CYAN:"#8892B0"}}>{c.statut}</span>
-                <span style={{fontSize:15,fontWeight:700,color:"#F8FAFF"}}>{(c.total||0).toLocaleString("fr-FR")} F</span>
+                <span style={{fontSize:12,color:c.statut==="Récupéré"?"#4ADE80":c.statut==="Prêt"?CYAN:"#FFB800",fontWeight:600}}>{c.statut}</span>
+                <span style={{fontSize:11,color:c.paiementConfirme?"#4ADE80":"#FFB800",fontWeight:600}}>{c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span>
               </div>
+              {c.livraison&&<div style={{marginTop:6,fontSize:11,color:"#A855F7"}}>🛵 Livraison {c.livraisonStatut==="confirmed"?"confirmée":"en attente"}</div>}
             </div>
           ))}
         </div>
@@ -1434,6 +1470,8 @@ function ClientsDB({ commandes }) {
 function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,onLogout }){
   const [tab,setTab]=useState("home");
   const [payCmd,setPayCmd]=useState(null);
+  const [cmdSearch,setCmdSearch]=useState("");
+  const [cmdFilter,setCmdFilter]=useState("Tous");
 
   const enAttente=commandes.filter(c=>c.livraison&&c.livraisonStatut==="pending").length;
   const aConfirmer=commandes.filter(c=>c.poidsStatut==="estimated").length;
@@ -1499,11 +1537,42 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
-          <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Commandes</h2>
-          {commandes.length===0&&<p style={{color:"#8892B0"}}>Aucune commande.</p>}
-          {commandes.map(c=>(
-            <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} hasTel={!!c.tel} />
-          ))}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+            <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Commandes</h2>
+            <span style={{background:`${BLU}30`,color:BLU2,borderRadius:20,padding:"4px 12px",fontSize:13,fontWeight:700}}>{commandes.length}</span>
+          </div>
+
+          {/* Barre de recherche */}
+          <input
+            value={cmdSearch}
+            onChange={e=>setCmdSearch(e.target.value)}
+            placeholder="🔍 Rechercher client ou N° ticket…"
+            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"12px 15px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}}
+          />
+
+          {/* Filtres par statut */}
+          <div style={{display:"flex",gap:8,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+            {["Tous","En cours","Prêt","Récupéré"].map(s=>(
+              <button key={s} onClick={()=>setCmdFilter(s)}
+                style={{flexShrink:0,background:cmdFilter===s?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${cmdFilter===s?BLU2:BDR}`,borderRadius:20,padding:"7px 14px",color:cmdFilter===s?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                {s==="Tous"?"Tous ("+commandes.length+")":s+" ("+commandes.filter(c=>c.statut===s).length+")"}
+              </button>
+            ))}
+          </div>
+
+          {/* Liste filtrée */}
+          {(()=>{
+            const liste = commandes.filter(c=>{
+              const matchStatut = cmdFilter==="Tous" || c.statut===cmdFilter;
+              const terme = cmdSearch.toLowerCase().trim();
+              const matchSearch = !terme || c.client.toLowerCase().includes(terme) || c.id.toLowerCase().includes(terme) || (c.tel&&c.tel.includes(terme));
+              return matchStatut && matchSearch;
+            });
+            if(liste.length===0) return <p style={{color:"#8892B0",textAlign:"center",marginTop:20}}>Aucune commande trouvée.</p>;
+            return liste.map(c=>(
+              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} hasTel={!!c.tel} />
+            ));
+          })()}
         </div>
       )}
 
