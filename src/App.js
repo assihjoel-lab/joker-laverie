@@ -153,7 +153,7 @@ function PinScreen({ onSuccess, correctPin }){
 }
 
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
-function NouvelleCommande({ commandes,setCommandes,tarifs,onBack,onDone }){
+function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
   const [poids,setPoids]=useState("");
@@ -176,6 +176,7 @@ function NouvelleCommande({ commandes,setCommandes,tarifs,onBack,onDone }){
       points:pts,paiement:paiement.id,livraison,adresse,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false};
     setCommandes(p=>[c,...p]);
+    if(upsertCmd) upsertCmd(c);
     setTicket(c);
   }
 
@@ -1533,7 +1534,7 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} tarifs={tarifs} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} tarifs={tarifs} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
