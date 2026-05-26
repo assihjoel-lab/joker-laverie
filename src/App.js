@@ -549,7 +549,28 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
 function Caisse({ commandes,tarifs }){
   const [period,setPeriod]=useState("today");
   const today=todayStr();
-  const filtered=period==="today"?commandes.filter(c=>c.date===today):commandes;
+
+  function getWeekDates(){
+    const days=[]; const now=new Date();
+    for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}));}
+    return days;
+  }
+  function getMonthDates(){
+    const days=[]; const now=new Date();
+    for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}));}
+    return days;
+  }
+
+  const weekDates=getWeekDates();
+  const monthDates=getMonthDates();
+
+  const filtered=period==="today"
+    ? commandes.filter(c=>c.date===today)
+    : period==="week"
+    ? commandes.filter(c=>weekDates.includes(c.date))
+    : period==="month"
+    ? commandes.filter(c=>monthDates.includes(c.date))
+    : commandes;
   const ca=filtered.reduce((s,c)=>s+c.total,0);
   const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id).length}));
   const maxPmt=Math.max(...byPmt.map(p=>p.total),1);
@@ -563,7 +584,7 @@ function Caisse({ commandes,tarifs }){
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Caisse & Recettes</h2>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {[{id:"today",l:"Aujourd'hui"},{id:"all",l:"Total"}].map(p=>(
+        {[{id:"today",l:"Auj."},{id:"week",l:"7 jours"},{id:"month",l:"30 jours"},{id:"all",l:"Total"}].map(p=>(
           <button key={p.id} onClick={()=>setPeriod(p.id)} style={{flex:1,background:period===p.id?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${period===p.id?BLU2:BDR}`,borderRadius:12,padding:"10px",color:period===p.id?"#fff":"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>{p.l}</button>
         ))}
       </div>
