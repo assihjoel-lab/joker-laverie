@@ -49,9 +49,7 @@ const FRIPERIE_INIT = [
   { id:3, nom:"Robe fleurie",   taille:"S",  prix:2000, etat:"Très bon",  emoji:"👗" },
 ];
 
-const LIVREURS_INIT = [
-  { id:"L1", nom:"Kofi A.", tel:"+228 91 11 22 33", actif:true, courses:0 },
-];
+const LIVREURS_INIT = [];
 
 const COMMANDES_INIT = [];
 
