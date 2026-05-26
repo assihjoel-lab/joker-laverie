@@ -1498,7 +1498,6 @@ function GerantDashboard({ commandes,setCommandes,friperie,setFriperie,tarifs,se
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
           {[
             {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
-            {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
             {id:"tarifs",    icon:"💲", label:"Gérer les tarifs",      sub:"Modifier les prix et services"},
             {id:"fidelite",  icon:"🏅", label:"Programme fidélité",    sub:"Gérer les points clients"},
             {id:"recompenses",icon:"🎁",label:"Récompenses",           sub:"Modifier les récompenses"},
