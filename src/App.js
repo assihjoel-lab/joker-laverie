@@ -1728,7 +1728,7 @@ export default function App(){
   const [commandes, upsertCmd,     removeCmd,  cmdReady]   = useFireCollection("commandes",  COMMANDES_INIT);
   const [clients,   upsertClient,  ,           cliReady]   = useFireCollection("clients",    []);
   const [friperie,  upsertFrip,    removeFrip, fripReady]  = useFireCollection("friperie",   FRIPERIE_INIT);
-  const [livreurs,  upsertLivreur, ,           livReady]   = useFireCollection("livreurs",   LIVREURS_INIT);
+  const [livreurs,  upsertLivreur, removeLivreur, livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
 
   // ── Firestore docs (config) ────────────────────────────
   const [tarifs,    saveTarifs,    tarifReady]  = useFireDoc("config","tarifs",    TARIFS_INIT);
@@ -1756,6 +1756,7 @@ export default function App(){
   function setLivreurs(fn){
     const next=typeof fn==="function"?fn(livreurs):fn;
     next.forEach(l=>upsertLivreur({...l,id:l.id||String(Date.now())}));
+    livreurs.forEach(l=>{ if(!next.find(u=>String(u.id)===String(l.id))) removeLivreur(String(l.id)); });
   }
   function setTarifs(fn){  saveTarifs(typeof fn==="function"?fn(tarifs):fn); }
   function setRewards(fn){ saveRewards(typeof fn==="function"?fn(rewards):fn); }
