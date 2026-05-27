@@ -284,7 +284,7 @@ function TicketModal({ c, tarifs, onClose }){
   const tarif = tarifs?.find(t=>t.id===c.tarifId)||{label:"Service",prix:c.tarif||0};
   const pmt   = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
   const frais = c.livraison ? LIVRAISON_TARIF : 0;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=140x140&data='+encodeURIComponent(window.location.origin+'?ticket='+c.id)+'&bgcolor=ffffff&color=1A3EBD&qzone=1';
 
   function imprimer(){
     const telRow = c.tel ? '<div class="row"><span>T\u00e9l\u00e9phone</span><span>'+c.tel+'</span></div>' : '';
@@ -2119,7 +2119,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
     setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));
     // Notifier le client que le livreur est en route
     if(cmd&&cmd.tel){
-      const livreurInfo = cmd.livreurNom ? `\n🛵 Livreur : *${cmd.livreurNom}*${cmd.livreurTel?`\n📞 ${cmd.livreurTel}`:""}` : "";
+      const livreurInfo = cmd.livreurNom ? '\n🛵 Livreur : *'+cmd.livreurNom+'*'+(cmd.livreurTel?'\n📞 '+cmd.livreurTel:'') : '';
       sendWhatsApp(cmd.tel, `🃏 *JOKER Laverie & Service*\n\n🛵 Votre livreur est *EN ROUTE* !\n\n🎫 Commande : ${cmd.id}\n👤 ${cmd.client}${livreurInfo}\n\nPréparez votre linge, il arrive bientôt ! 📦`);
     }
   //}
