@@ -287,27 +287,53 @@ function TicketModal({ c, tarifs, onClose }){
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
 
   function imprimer(){
-    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    if(isIOS){
-      // Sur iPhone: ouvrir le ticket dans un nouvel onglet pour partager/imprimer
-      const el = document.getElementById("joker-ticket-print");
-      if(!el) return;
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer;}@media print{.btn{display:none!important;}.no-print{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/><div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}<div class="row"><span>Service</span><span>${tarif.label}</span></div><div class="row"><span>Poids</span><span>${c.poids} kg</span></div><div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>${c.livraison?`<div class="row"><span>Livraison</span><span>+${fmt(frais)} FCFA</span></div>`:""}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div><div class="no-print"><button class="btn" onclick="window.print()">🖨️ Imprimer</button><button class="btn" style="background:#555;margin-top:8px;" onclick="window.close()">← Retour</button></div></body></html>`;
-      const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+    const telRow = c.tel ? '<div class="row"><span>T\u00e9l\u00e9phone</span><span>'+c.tel+'</span></div>' : '';
+    const livRow = c.livraison ? '<div class="row"><span>Livraison \ud83d\udef5</span><span>+'+fmt(frais)+' FCFA</span></div>' : '';
+    const estRow = c.poidsStatut==='estimated' ? '<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">\u26a0\ufe0f Poids estim\u00e9 \u2014 \u00e0 confirmer</div>' : '';
+    const html = '<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket '+c.id+'</title>'
+      + '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}'
+      + '.center{text-align:center;}.logo{width:64px;height:64px;border-radius:50%;object-fit:cover;margin-bottom:6px;}'
+      + '.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}'
+      + '.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}'
+      + '.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}'
+      + '.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}'
+      + '.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}'
+      + '.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:12px;cursor:pointer;}'
+      + '@media print{.no-print{display:none!important;}}</style></head><body>'
+      + '<div class="center"><img src="'+LOGO_B64+'" class="logo" alt="JOKER"/>'
+      + '<div class="title">JOKER LAVERIE</div>'
+      + '<div class="sub">PROPRET\u00c9 \u00b7 QUALIT\u00c9 \u00b7 FIABILIT\u00c9</div>'
+      + '<div class="sub">Lom\u00e9, Togo</div>'
+      + '<span class="badge">'+(c.statut||'En cours')+'</span></div>'
+      + '<hr class="sep"/>'
+      + estRow
+      + '<div class="row"><span>N\u00b0 Ticket</span><span>'+c.id+'</span></div>'
+      + '<div class="row"><span>Date</span><span>'+c.date+'</span></div>'
+      + '<div class="row"><span>Client</span><span>'+c.client+'</span></div>'
+      + telRow
+      + '<div class="row"><span>Service</span><span>'+tarif.label+'</span></div>'
+      + '<div class="row"><span>Poids</span><span>'+c.poids+' kg</span></div>'
+      + '<div class="row"><span>Tarif</span><span>'+fmt(c.tarif||0)+' F/kg</span></div>'
+      + livRow
+      + '<hr class="sep"/>'
+      + '<div class="row"><span>TOTAL</span><span class="total">'+fmt(c.total)+' FCFA</span></div>'
+      + '<div class="row"><span>Paiement</span><span>'+pmt.label+'</span></div>'
+      + '<div class="row"><span>Points fid\u00e9lit\u00e9</span><span>+'+(c.points||0)+' \ud83c\udfc5</span></div>'
+      + '<hr class="sep"/>'
+      + '<div class="center"><img src="'+qrUrl+'" width="110" height="110" style="display:block;margin:0 auto 4px;"/>'
+      + '<div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div>'
+      + '<hr class="sep"/>'
+      + '<div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>'
+      + '<div class="no-print"><button class="btn" onclick="window.print()">\ud83d\udda8\ufe0f Imprimer</button></div>'
+      + '</body></html>';
+    const w = window.open('','_blank','width=420,height=700');
+    if(w){ w.document.write(html); w.document.close(); w.onload=()=>{w.focus();w.print()}; }
+    else {
+      const blob = new Blob([html],{type:'text/html;charset=utf-8'});
       const url = URL.createObjectURL(blob);
-      window.location.href = url;
-    } else {
-      // Sur PC/Android: ouvrir nouvelle fenêtre
-      const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">⚖️ Poids estimé — à confirmer</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}<div class="row"><span>Service</span><span>${tarif.label}</span></div><div class="row"><span>Poids</span><span>${c.poids} kg</span></div><div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>${c.livraison?`<div class="row"><span>Livraison</span><span>+${fmt(frais)} FCFA</span></div>`:""}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div></body></html>`;
-      const w = window.open("","_blank","width=420,height=700");
-      if(w){ w.document.write(ticketHTML); w.document.close(); w.onload=()=>{w.focus();w.print();}; }
-      else {
-        const blob = new Blob([ticketHTML],{type:"text/html;charset=utf-8"});
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href=url; a.download=`ticket-${c.id}.html`; a.click();
-        URL.revokeObjectURL(url);
-      }
+      const a = document.createElement('a');
+      a.href=url; a.download='ticket-'+c.id+'.html'; a.click();
+      URL.revokeObjectURL(url);
     }
   }
 
@@ -2622,4 +2648,3 @@ export default function App(){
     </div>
   );
 }
- 
