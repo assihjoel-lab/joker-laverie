@@ -380,7 +380,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
     <div style={{background:CARD,borderRadius:20,padding:16,marginBottom:12,border:`1px solid ${c.poidsStatut==="estimated"?"rgba(255,184,0,0.25)":BDR}`}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
         <div style={{flex:1}}>
-          <p style={{fontWeight:700,fontSize:15}}>{c.client}</p>
+          <p style={{fontWeight:700,fontSize:15}}>{c.client} {c.typeRamassage&&<span style={{background:"#FF6B3520",color:"#FF6B35",borderRadius:6,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>🧺 RAMASSAGE</span>}</p>
           <p style={{fontSize:12,color:"#8892B0"}}>{c.id} · {c.date} {c.livraison?"· 🛵":""}</p>
           {c.tel&&<p style={{fontSize:11,color:"#8892B0",marginTop:2}}>📞 {c.tel}</p>}
         </div>
@@ -1350,7 +1350,7 @@ function EvaluationBlock({ commande, setCommandes }){
 
 
 // ─── RAMASSAGE À DOMICILE ─────────────────────────────────
-function RamassageBlock({ commandes, setCommandes }){
+function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clients }){
   const [show, setShow] = useState(false);
   const [nom,  setNom]  = useState("");
   const [tel,  setTel]  = useState("");
@@ -1377,8 +1377,45 @@ function RamassageBlock({ commandes, setCommandes }){
 
   function envoyer(){
     if(!nom||!tel||!adr)return;
-    const msg=`🧺 *DEMANDE DE RAMASSAGE*%0A%0A👤 Nom : ${nom}%0A📞 Tél : ${tel}%0A📍 Adresse : ${adr}%0A%0AUn client souhaite qu'on vienne chercher son linge !`;
-    sendWhatsApp("22879621085", msg);
+    // Créer une demande de livraison dans Firebase
+    const demandeId = "RAM-"+String(Math.floor(Math.random()*9000)+1000);
+    const demande = {
+      id: demandeId,
+      client: nom.trim(),
+      tel: tel.trim(),
+      adresse: adr.trim(),
+      poids: 0,
+      total: 0,
+      points: 0,
+      statut: "En cours",
+      date: todayStr(),
+      paiement: "especes",
+      livraison: "depot",
+      livraisonStatut: "pending",
+      livreurNom: null,
+      livreurTel: null,
+      paiementConfirme: false,
+      poidsStatut: "estimated",
+      tarifId: "lavage",
+      tarif: 0,
+      typeRamassage: true,
+    };
+    // Sauver commande dans Firebase
+    if(upsertCmd) upsertCmd(demande);
+    setCommandes(p=>[demande,...p]);
+    // Enregistrer/MAJ client dans base
+    if(upsertClient){
+      const existing=(clients||[]).find(cl=>cl.tel===tel.trim()||cl.nom?.toLowerCase()===nom.trim().toLowerCase());
+      const entry={id:demandeId,date:todayStr(),total:0,poids:0,statut:"En cours",service:"Ramassage",adresse:adr.trim()};
+      if(existing){
+        upsertClient({...existing,tel:tel.trim(),adresse:adr.trim(),commandes:[entry,...(existing.commandes||[])],historique:[entry,...(existing.historique||[])]});
+      } else {
+        upsertClient({id:"cli_"+demandeId,nom:nom.trim(),tel:tel.trim(),email:"",adresse:adr.trim(),notes:"",points:0,dateCreation:todayStr(),commandes:[entry],historique:[entry],totalDepense:0});
+      }
+    }
+    // Notifier par WhatsApp aussi
+    const msg=`🧺 *DEMANDE DE RAMASSAGE*%0A%0A👤 Nom : ${nom}%0A📞 Tél : ${tel}%0A📍 Adresse : ${adr}%0A🎫 Réf : ${demandeId}%0A%0AUn client souhaite qu'on vienne chercher son linge !`;
+    sendWhatsApp(JOKER_FLOOZ.replace(/\D/g,""), msg);
     setSent(true); setShow(false);
     setNom(""); setTel(""); setAdr("");
   }
@@ -1427,7 +1464,7 @@ function RamassageBlock({ commandes, setCommandes }){
 }
 
 // ─── ESPACE CLIENT ────────────────────────────────────────
-function ClientSpace({ commandes,setCommandes,friperie,rewards }){
+function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,friperie,rewards }){
   const [tab,setTab]=useState("suivi");
   // Pré-remplir depuis URL ?ticket=XXX (scan QR code)
   const urlTicket = new URLSearchParams(window.location.search).get("ticket")||"";
@@ -1502,7 +1539,7 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
         <div style={{padding:"16px 20px 0"}}>
 
           {/* Bouton ramassage à domicile */}
-          <RamassageBlock commandes={commandes} setCommandes={setCommandes} />
+          <RamassageBlock commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} />
 
           <div style={{display:"flex",gap:10,marginBottom:14}}>
             <input value={rech} onChange={e=>setRech(e.target.value)} onKeyDown={e=>e.key==="Enter"&&chercher()} placeholder="N° ticket ou nom…" style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:15,outline:"none"}} />
@@ -2233,7 +2270,12 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
             <span style={{fontSize:18}}>{tb.icon}</span>
             <span style={{fontSize:9,fontWeight:600}}>{tb.label}</span>
             {tb.id==="livraisons"&&enAttente>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#A855F7",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{enAttente}</span>}
-            {tb.id==="commandes"&&commandes.filter(c=>c.statut==="Prêt"&&!c.paiementConfirme).length>0&&<span style={{position:"absolute",top:-4,right:-4,background:CYAN,color:"#0A0F1E",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{commandes.filter(c=>c.statut==="Prêt"&&!c.paiementConfirme).length}</span>}
+            {tb.id==="commandes"&&(()=>{
+              const pret=commandes.filter(c=>c.statut==="Prêt"&&!c.paiementConfirme).length;
+              const ram=commandes.filter(c=>c.typeRamassage&&c.livraisonStatut==="pending").length;
+              const total=pret+ram;
+              return total>0&&<span style={{position:"absolute",top:-4,right:-4,background:ram>0?"#FF6B35":CYAN,color:"#0A0F1E",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{total}</span>;
+            })()}
           </button>
         ))}
       </div>
@@ -2353,7 +2395,19 @@ export default function App(){
   function setCommandes(fn){
     const next = typeof fn==="function"?fn(commandes):fn;
     next.forEach(c=>upsertCmd(c));
-    commandes.forEach(c=>{ if(!next.find(u=>u.id===c.id)) removeCmd(c.id); });
+    commandes.forEach(c=>{
+      if(!next.find(u=>u.id===c.id)){
+        removeCmd(c.id);
+        // Garder dans historique client même après suppression
+        const cli=clients.find(cl=>(cl.commandes||[]).find(h=>h.id===c.id));
+        if(cli&&upsertClient){
+          upsertClient({...cli,
+            commandes:(cli.commandes||[]).map(h=>h.id===c.id?{...h,statut:"Supprimée",supprime:true}:h),
+            historique:(cli.historique||[]).map(h=>h.id===c.id?{...h,statut:"Supprimée",supprime:true}:h)
+          });
+        }
+      }
+    });
   }
   function setClients(fn){
     const next=typeof fn==="function"?fn(clients):fn;
@@ -2482,7 +2536,7 @@ export default function App(){
                 <span style={{fontSize:12,fontWeight:700,color:CYAN}}>CLIENT</span>
               </div>
             </div>
-            <ClientSpace commandes={commandes} setCommandes={setCommandes} friperie={friperie} rewards={rewards} />
+            <ClientSpace commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} friperie={friperie} rewards={rewards} />
           </div>
         )}
       </div>
