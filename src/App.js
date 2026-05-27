@@ -1517,6 +1517,7 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
                     <span style={{fontSize:11,color:c.paiementConfirme?"#4ADE80":"#FFB800"}}>{c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span>
                     <span style={{fontSize:11,color:"#8892B0"}}>Tap pour détails →</span>
                   </div>
+                </div>
               ))}
             </div>
           )}
