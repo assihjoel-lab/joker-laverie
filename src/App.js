@@ -64,7 +64,7 @@ const LEVEL_SEUILS = [
 function genId()  { return "JK-"+String(Math.floor(Math.random()*900)+100); }
 function fmt(n)   { return Number(n).toLocaleString("fr-FR"); }
 function getLevel(pts) { return LEVEL_SEUILS.find(l=>pts>=l.min&&pts<=l.max)||LEVEL_SEUILS[0]; }
-function calcTotal(poids,tarif,livraison){ return Math.round(parseFloat(poids)*tarif)+(livraison?LIVRAISON_TARIF:0); }
+function calcTotal(poids,tarif,livraison,fraisLivOverride){ return Math.round(parseFloat(poids)*tarif)+(livraison?(fraisLivOverride||LIVRAISON_TARIF_DEFAULT):0); }
 function todayStr(){ return new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"}); }
 
 function sendWhatsApp(tel,msg){
@@ -161,10 +161,11 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [adresse,setAdresse]=useState("");
   const [ticket,setTicket]=useState(null);
   const [ticketPrint,setTicketPrint]=useState(null);
+  const [fraisLiv,setFraisLiv]=useState(LIVRAISON_TARIF_DEFAULT);
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
   const sousTotal=poids?Math.round(parseFloat(poids)*tarif.prix):0;
-  const frais=livraison?LIVRAISON_TARIF:0;
+  const frais=livraison?fraisLiv:0;
   const total=sousTotal+frais;
   const pts=Math.floor(total/100);
 
@@ -172,7 +173,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     if(!nom||!poids) return;
     const c={id:genId(),client:nom,tel,poids:parseFloat(poids),poidsStatut:isDepot?"estimated":"confirmed",
       tarifId:tarif.id,tarif:tarif.prix,total,statut:"En cours",date:todayStr(),
-      points:pts,paiement:paiement.id,livraison,adresse,
+      points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
@@ -244,6 +245,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           ))}
         </div>
         {livraison&&<input value={adresse} onChange={e=>setAdresse(e.target.value)} placeholder="Adresse à Lomé" style={{width:"100%",marginTop:10,background:CARD,border:"1px solid rgba(168,85,247,0.3)",borderRadius:12,padding:"12px 14px",color:"#F8FAFF",fontSize:14,outline:"none"}} />}
+        {livraison&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><span style={{color:"#8892B0",fontSize:12}}>Frais livraison :</span><input type="number" value={fraisLiv} onChange={e=>setFraisLiv(parseInt(e.target.value)||0)} style={{width:100,background:DARK,border:"1px solid #1A3EBD44",borderRadius:10,padding:"7px 10px",color:"#00C2FF",fontWeight:700,fontSize:14,outline:"none",textAlign:"center"}} /><span style={{color:"#8892B0",fontSize:12}}>FCFA</span></div>}
       </div>
       <div style={{marginBottom:14}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Paiement</label>
@@ -2013,6 +2015,15 @@ function ClientsDB({ commandes }) {
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
   const [tab,setTab]=useState("home");
+  const [notifPop,setNotifPop]=useState(null);
+  const pendingLivCount = commandes.filter(c=>c.livraisonStatut==="pending").length;
+
+  useEffect(()=>{
+    if(pendingLivCount>0){
+      const latest=commandes.filter(c=>c.livraisonStatut==="pending").slice(-1)[0];
+      if(latest){ setNotifPop(latest); const t=setTimeout(()=>setNotifPop(null),10000); return()=>clearTimeout(t); }
+    }
+  },[pendingLivCount]);
   const [payCmd,setPayCmd]=useState(null);
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
@@ -2102,7 +2113,25 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
         </div>
       ))}
 
-      {payCmd&&<PayModal c={payCmd} onClose={()=>setPayCmd(null)} onConfirm={(m)=>confirmerPaiement(payCmd.id,m)} />}
+      {/* Notification pop-up livraison */}
+    {notifPop&&(
+      <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:9999,width:"90%",maxWidth:380,background:"linear-gradient(135deg,#1A0D3D,#2D1060)",border:"2px solid #A855F7",borderRadius:20,padding:"16px 18px",boxShadow:"0 8px 32px rgba(168,85,247,0.4)",animation:"slideUp 0.3s ease"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div style={{flex:1}}>
+            <p style={{color:"#A855F7",fontWeight:700,fontSize:13,marginBottom:4}}>🛵 Demande de livraison !</p>
+            <p style={{color:"#F8FAFF",fontWeight:700,fontSize:15}}>{notifPop.client}</p>
+            <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>📍 {notifPop.adresse||"—"}</p>
+            <p style={{color:"#8892B0",fontSize:12}}>🎫 {notifPop.id} · {notifPop.tel||"—"}</p>
+          </div>
+          <button onClick={()=>setNotifPop(null)} style={{background:"none",border:"none",color:"#8892B0",fontSize:20,cursor:"pointer"}}>✕</button>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:12}}>
+          <button onClick={()=>{setTab("livraisons");setNotifPop(null);}} style={{flex:1,background:"linear-gradient(135deg,#A855F7,#7C3AED)",border:"none",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>🛵 Livreurs</button>
+          <button onClick={()=>{setTab("commandes");setNotifPop(null);}} style={{flex:1,background:"#1A1030",border:"1px solid #A855F740",borderRadius:12,padding:"10px",color:"#A855F7",fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Commandes</button>
+        </div>
+      </div>
+    )}
+    {payCmd&&<PayModal c={payCmd} onClose={()=>setPayCmd(null)} onConfirm={(m)=>confirmerPaiement(payCmd.id,m)} />}
       {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
       <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${BDR}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <Logo size={30} />
