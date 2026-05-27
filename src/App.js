@@ -1356,7 +1356,6 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
 
   return (
     <div style={{paddingBottom:70}}>
-      {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
       <div style={{padding:"32px 20px 0",textAlign:"center"}}>
         <Logo size={80} style={{margin:"0 auto 12px"}} />
         <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:3}}>JOKER LAVERIE</h1>
@@ -1858,6 +1857,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
   return (
     <div style={{paddingBottom:84}}>
       {payCmd&&<PayModal c={payCmd} onClose={()=>setPayCmd(null)} onConfirm={(m)=>confirmerPaiement(payCmd.id,m)} />}
+      {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
       <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${BDR}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <Logo size={30} />
         <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:14,letterSpacing:2,color:BLU2}}>GÉRANT</span>
