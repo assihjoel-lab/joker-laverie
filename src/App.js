@@ -2097,7 +2097,9 @@ export default function App(){
   function setGerantPin(v){ savePin(v); }
   function setAdminPw(v){   saveAdminPw(v); }
 
-  const [screen,    setScreen]    = useState("landing");
+  // Auto-redirect to client space if URL has ?ticket=
+  const _urlTicketApp = new URLSearchParams(window.location.search).get("ticket")||"";
+  const [screen,    setScreen]    = useState(_urlTicketApp ? "client" : "landing");
   const [gerantAuth,setGerantAuth]= useState(false);
 
   return (
