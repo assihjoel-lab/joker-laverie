@@ -1,4 +1,4 @@
-const CACHE = "joker-v1";
+const CACHE = "joker-v2";
 const ASSETS = ["/", "/index.html", "/static/js/main.chunk.js", "/static/css/main.chunk.css"];
 
 self.addEventListener("install", e => {
