@@ -169,30 +169,34 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const total=sousTotal+frais;
   const pts=Math.floor(total/100);
 
+  function genCodeClient(nom, tel){
+    const base=(nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
+    return "CLI-"+base;
+  }
+
   function creer(){
     if(!nom||!poids) return;
+    const existingCli=(clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
+    const codeClient=existingCli?.codeClient||genCodeClient(nom,tel);
     const c={id:genId(),client:nom,tel,poids:parseFloat(poids),poidsStatut:isDepot?"estimated":"confirmed",
       tarifId:tarif.id,tarif:tarif.prix,total,statut:"En cours",date:todayStr(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,
-      livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false};
+      livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,codeClient};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
-    // Auto-enregistrement client + historique permanent
-    if(upsertClient && nom.trim()) {
-      const existing = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
-      const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:c.poids,statut:c.statut,service:tarif.label};
-      if(existing) {
-        upsertClient({...existing, historique:[cmdEntry,...(existing.historique||[])], totalDepense:(existing.totalDepense||0)+c.total, commandes:[cmdEntry,...(existing.commandes||[])]});
+    if(upsertClient&&nom.trim()){
+      const cmdEntry={id:c.id,date:c.date,total:c.total,poids:c.poids,statut:c.statut,service:tarif.label};
+      if(existingCli){
+        upsertClient({...existingCli,codeClient,historique:[cmdEntry,...(existingCli.historique||[])],totalDepense:(existingCli.totalDepense||0)+c.total,points:c.points});
       } else {
-        upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total});
+        upsertClient({id:"cli_"+c.id,nom:nom.trim(),tel:tel.trim()||"—",email:"",adresse:"",notes:"",points:c.points,totalDepense:c.total,historique:[cmdEntry],codeClient});
       }
     }
     setTicket(c);
   }
-
   function waTicket(c){
     if(!c.tel) return;
-    sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\n🎫 Ticket: ${c.id}\n👤 ${c.client}\n⚖️ ${c.poids}kg\n💰 ${fmt(c.total)} FCFA\n💳 ${PAIEMENTS.find(p=>p.id===c.paiement)?.label}\n🏅 +${c.points} points\n\nLomé, Togo — Merci! 🙏`);
+    sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\n🎫 Ticket: ${c.id}\n👤 ${c.client}\n⚖️ ${c.poids}kg\n💰 ${fmt(c.total)} FCFA\n\n🔑 *Votre code client : ${c.codeClient||"—"}*\nConservez ce code pour accéder à votre espace client !\n\nMerci de votre confiance 🙏`);
   }
 
   if(ticketPrint) return <TicketModal c={ticketPrint} tarifs={tarifs} onClose={()=>setTicketPrint(null)} />;
@@ -204,7 +208,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         {ticket.poidsStatut==="estimated"&&<div style={{background:"#1A0D00",borderRadius:12,padding:10,marginTop:8,border:"1px solid #FFB80040"}}><p style={{color:"#FFB800",fontSize:13,fontWeight:600}}>⚖️ Poids estimé — à confirmer à la laverie</p></div>}
       </div>
       <div style={{background:CARD,borderRadius:18,padding:20,border:`1px solid ${BDR}`,marginBottom:16}}>
-        {[["N°",ticket.id],["Client",ticket.client],["Téléphone",ticket.tel||"—"],["Poids",ticket.poids+"kg"],["Service",tarif.label],["Sous-total",fmt(sousTotal)+" FCFA"],livraison?["Livraison 🛵",fmt(LIVRAISON_TARIF)+" FCFA"]:null,["TOTAL",fmt(total)+" FCFA"],["Paiement",PAIEMENTS.find(p=>p.id===ticket.paiement)?.label],["+Points","+"+pts+" 🏅"]].filter(Boolean).map(([k,v])=>(
+        {[["N°",ticket.id],["Code client",ticket.codeClient||"—"],["Client",ticket.client],["Téléphone",ticket.tel||"—"],["Poids",ticket.poids+"kg"],["Service",tarif.label],["Sous-total",fmt(sousTotal)+" FCFA"],livraison?["Livraison 🛵",fmt(LIVRAISON_TARIF)+" FCFA"]:null,["TOTAL",fmt(total)+" FCFA"],["Paiement",PAIEMENTS.find(p=>p.id===ticket.paiement)?.label],["+Points","+"+pts+" 🏅"]].filter(Boolean).map(([k,v])=>(
           <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
@@ -1507,10 +1511,15 @@ function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,fri
 
   function chercher(){
     const terme=rech.trim().toLowerCase();
-    // Chercher par N° exact d'abord
+    // 1. Chercher par code client (espace personnel)
+    if(terme.startsWith("cli-")){
+      const all=commandes.filter(c=>c.codeClient&&c.codeClient.toLowerCase()===terme);
+      if(all.length>0){setResAll(all.slice().reverse());setRes(null);setNotFound(false);setShowLiv(false);setSent(false);return;}
+    }
+    // 2. Chercher par N° ticket exact
     const exact=commandes.find(c=>c.id.toLowerCase()===terme);
     if(exact){setRes(exact);setResAll(null);setNotFound(false);setShowLiv(false);setSent(false);return;}
-    // Sinon chercher toutes les commandes du client par nom ou tél
+    // 3. Chercher par nom ou téléphone
     const all=commandes.filter(c=>c.client.toLowerCase().includes(terme)||(c.tel&&c.tel.includes(rech.trim())));
     if(all.length>0){setResAll(all.slice().reverse());setRes(null);setNotFound(false);}
     else{setResAll(null);setRes(null);setNotFound(true);}
@@ -2079,7 +2088,15 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
   }
   function confirmPoids(id,newP){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const t=calcTotal(newP,c.tarif,c.livraison);return{...c,poids:newP,total:t,points:Math.floor(t/100),poidsStatut:"confirmed"};}));}
   function editFraisLiv(id,frais){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const sousTotal=Math.round(parseFloat(c.poids)*c.tarif);const total=sousTotal+frais;return{...c,livraisonFrais:frais,total,points:Math.floor(total/100)};}));}
-  function validerLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));}
+  function validerLiv(id){
+    const cmd = commandes.find(c=>c.id===id);
+    setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));
+    // Notifier le client que le livreur est en route
+    if(cmd&&cmd.tel){
+      const livreurInfo = cmd.livreurNom ? `\n🛵 Livreur : *${cmd.livreurNom}*${cmd.livreurTel?`\n📞 ${cmd.livreurTel}`:""}` : "";
+      sendWhatsApp(cmd.tel, `🃏 *JOKER Laverie & Service*\n\n🛵 Votre livreur est *EN ROUTE* !\n\n🎫 Commande : ${cmd.id}\n👤 ${cmd.client}${livreurInfo}\n\nPréparez votre linge, il arrive bientôt ! 📦`);
+    }
+  //}
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){
