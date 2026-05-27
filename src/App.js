@@ -2016,14 +2016,18 @@ function ClientsDB({ commandes }) {
 function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
-  const pendingLivCount = commandes.filter(c=>c.livraisonStatut==="pending").length;
+  const [notifDismissed,setNotifDismissed]=useState(false);
+  const pendingLivs = commandes.filter(c=>c.livraisonStatut==="pending");
 
+  // Show all pending livraisons on load and when new ones arrive
   useEffect(()=>{
-    if(pendingLivCount>0){
-      const latest=commandes.filter(c=>c.livraisonStatut==="pending").slice(-1)[0];
-      if(latest){ setNotifPop(latest); const t=setTimeout(()=>setNotifPop(null),10000); return()=>clearTimeout(t); }
+    if(pendingLivs.length>0 && !notifDismissed){
+      setNotifPop(pendingLivs);
+    } else if(pendingLivs.length===0){
+      setNotifPop(null);
+      setNotifDismissed(false);
     }
-  },[pendingLivCount]);
+  },[pendingLivs.length]);
   const [payCmd,setPayCmd]=useState(null);
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
@@ -2081,7 +2085,12 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
   function validerLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));}
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
-  function deleteCommande(id){setCommandes(p=>p.filter(c=>c.id!==id));}
+  function deleteCommande(id){
+    // Suppression directe dans Firebase
+    removeCmd(String(id));
+    // Mise à jour locale
+    setCommandes(p=>p.filter(c=>c.id!==id));
+  }
   const [ticketModal,setTicketModal]=useState(null);
   function confirmerPaiement(id,mode){setCommandes(p=>p.map(c=>c.id===id?{...c,paiement:mode,paiementConfirme:true}:c));setPayCmd(null);}
 
@@ -2114,20 +2123,28 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
       ))}
 
       {/* Notification pop-up livraison */}
-    {notifPop&&(
-      <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:9999,width:"90%",maxWidth:380,background:"linear-gradient(135deg,#1A0D3D,#2D1060)",border:"2px solid #A855F7",borderRadius:20,padding:"16px 18px",boxShadow:"0 8px 32px rgba(168,85,247,0.4)",animation:"slideUp 0.3s ease"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-          <div style={{flex:1}}>
-            <p style={{color:"#A855F7",fontWeight:700,fontSize:13,marginBottom:4}}>🛵 Demande de livraison !</p>
-            <p style={{color:"#F8FAFF",fontWeight:700,fontSize:15}}>{notifPop.client}</p>
-            <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>📍 {notifPop.adresse||"—"}</p>
-            <p style={{color:"#8892B0",fontSize:12}}>🎫 {notifPop.id} · {notifPop.tel||"—"}</p>
-          </div>
-          <button onClick={()=>setNotifPop(null)} style={{background:"none",border:"none",color:"#8892B0",fontSize:20,cursor:"pointer"}}>✕</button>
+    {notifPop&&notifPop.length>0&&(
+      <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:9999,width:"92%",maxWidth:390,background:"linear-gradient(135deg,#1A0D3D,#2D1060)",border:"2px solid #A855F7",borderRadius:20,padding:"16px 18px",boxShadow:"0 8px 32px rgba(168,85,247,0.4)",animation:"slideUp 0.3s ease",maxHeight:"80vh",overflowY:"auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <p style={{color:"#A855F7",fontWeight:700,fontSize:14}}>🛵 {notifPop.length} demande{notifPop.length>1?"s":""} de livraison en attente</p>
+          <button onClick={()=>{setNotifPop(null);setNotifDismissed(true);}} style={{background:"none",border:"none",color:"#8892B0",fontSize:20,cursor:"pointer"}}>✕</button>
         </div>
-        <div style={{display:"flex",gap:8,marginTop:12}}>
-          <button onClick={()=>{setTab("livraisons");setNotifPop(null);}} style={{flex:1,background:"linear-gradient(135deg,#A855F7,#7C3AED)",border:"none",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>🛵 Livreurs</button>
-          <button onClick={()=>{setTab("commandes");setNotifPop(null);}} style={{flex:1,background:"#1A1030",border:"1px solid #A855F740",borderRadius:12,padding:"10px",color:"#A855F7",fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Commandes</button>
+        {notifPop.map(cmd=>(
+          <div key={cmd.id} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,padding:"10px 12px",marginBottom:8,border:"1px solid #A855F730"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+              <span style={{color:"#F8FAFF",fontWeight:700,fontSize:14}}>{cmd.client}</span>
+              <span style={{color:"#A855F7",fontSize:12,fontWeight:700}}>{cmd.id}</span>
+            </div>
+            <p style={{color:"#8892B0",fontSize:12}}>📞 {cmd.tel||"—"}</p>
+            {cmd.adresse&&cmd.adresse.includes("maps.google")
+              ? <a href={cmd.adresse} target="_blank" rel="noreferrer" style={{color:"#25D366",fontSize:12,display:"block",marginTop:2}}>📍 Voir sur Google Maps</a>
+              : <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>📍 {cmd.adresse||"—"}</p>
+            }
+          </div>
+        ))}
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <button onClick={()=>{setTab("livraisons");setNotifPop(null);setNotifDismissed(true);}} style={{flex:1,background:"linear-gradient(135deg,#A855F7,#7C3AED)",border:"none",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>🛵 Livreurs</button>
+          <button onClick={()=>{setTab("commandes");setNotifPop(null);setNotifDismissed(true);}} style={{flex:1,background:"#1A1030",border:"1px solid #A855F740",borderRadius:12,padding:"10px",color:"#A855F7",fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Commandes</button>
         </div>
       </div>
     )}
