@@ -1283,6 +1283,80 @@ function EvaluationBlock({ commande, setCommandes }){
   );
 }
 
+
+// ─── RAMASSAGE À DOMICILE ─────────────────────────────────
+function RamassageBlock({ commandes, setCommandes }){
+  const [show, setShow] = useState(false);
+  const [nom,  setNom]  = useState("");
+  const [tel,  setTel]  = useState("");
+  const [adr,  setAdr]  = useState("");
+  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  function envoyerGeo(){
+    if(!navigator.geolocation){alert("Géolocalisation non disponible");return;}
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        const link=`https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
+        setAdr(link);
+        setLoading(false);
+      },
+      ()=>{setLoading(false);alert("Position indisponible.");}
+    );
+  }
+
+  function envoyer(){
+    if(!nom||!tel||!adr)return;
+    const msg=`🧺 *DEMANDE DE RAMASSAGE*%0A%0A👤 Nom : ${nom}%0A📞 Tél : ${tel}%0A📍 Adresse : ${adr}%0A%0AUn client souhaite qu'on vienne chercher son linge !`;
+    sendWhatsApp("22879621085", msg);
+    setSent(true); setShow(false);
+    setNom(""); setTel(""); setAdr("");
+  }
+
+  if(sent) return (
+    <div style={{background:"#0D2A1A",borderRadius:16,padding:16,marginBottom:14,border:"1px solid #25D36640",textAlign:"center"}}>
+      <p style={{fontSize:22,marginBottom:6}}>✅</p>
+      <p style={{color:"#25D366",fontWeight:700}}>Demande envoyée !</p>
+      <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>Nous vous contacterons très bientôt.</p>
+      <button onClick={()=>setSent(false)} style={{marginTop:10,background:"none",border:"none",color:"#4A7BF7",fontSize:12,cursor:"pointer"}}>Faire une autre demande</button>
+    </div>
+  );
+
+  return (
+    <div style={{marginBottom:14}}>
+      <button onClick={()=>setShow(!show)} style={{width:"100%",background:"linear-gradient(135deg,#0D2A1A,#0D3B2E)",border:"1px solid #25D36640",borderRadius:16,padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
+        <span style={{fontSize:28}}>🧺</span>
+        <div style={{flex:1}}>
+          <p style={{color:"#25D366",fontWeight:700,fontSize:14}}>Faire ramasser mon linge</p>
+          <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>On vient chercher chez vous · Lomé</p>
+        </div>
+        <span style={{color:"#25D366",fontSize:20}}>{show?"▲":"▼"}</span>
+      </button>
+
+      {show&&(
+        <div style={{background:"#060D1F",border:"1px solid #25D36640",borderRadius:"0 0 16px 16px",padding:16,borderTop:"none"}}>
+          <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Votre nom *"
+            style={{width:"100%",background:"#0D1F6E22",border:"1px solid #1A3EBD44",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+          <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone *" type="tel"
+            style={{width:"100%",background:"#0D1F6E22",border:"1px solid #1A3EBD44",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+          <input value={adr} onChange={e=>setAdr(e.target.value)} placeholder="Votre adresse / quartier *"
+            style={{width:"100%",background:"#0D1F6E22",border:"1px solid #1A3EBD44",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:8}} />
+          <button onClick={envoyerGeo} disabled={loading} style={{width:"100%",background:"#0D2A1A",border:"1px solid #25D36640",borderRadius:12,padding:"10px",color:"#25D366",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+            {loading?"📍 Localisation...":"📍 Utiliser ma position GPS"}
+          </button>
+          {adr&&adr.includes("maps.google")&&(
+            <p style={{color:"#25D366",fontSize:11,marginBottom:8,textAlign:"center"}}>✅ Position GPS détectée</p>
+          )}
+          <button onClick={envoyer} disabled={!nom||!tel||!adr} style={{width:"100%",background:nom&&tel&&adr?"linear-gradient(135deg,#25D366,#128C7E)":"#1A2240",border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:15,cursor:nom&&tel&&adr?"pointer":"default"}}>
+            📲 Envoyer la demande
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ESPACE CLIENT ────────────────────────────────────────
 function ClientSpace({ commandes,setCommandes,friperie,rewards }){
   const [tab,setTab]=useState("suivi");
@@ -1318,11 +1392,27 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
     else{setResAll(null);setRes(null);setNotFound(true);}
     setShowLiv(false);setSent(false);
   }
-  function demanderLiv(){
-    if(!adresse)return;
-    setCommandes(p=>p.map(c=>c.id===res.id?{...c,livraison:livType,adresse,tel:tel||c.tel,livraisonStatut:"pending"}:c));
-    setRes(p=>({...p,livraison:livType,adresse,livraisonStatut:"pending"}));
+  function demanderLiv(geoLink){
+    const adr = geoLink || adresse;
+    if(!adr)return;
+    setCommandes(p=>p.map(c=>c.id===res.id?{...c,livraison:livType,adresse:adr,tel:tel||c.tel,livraisonStatut:"pending"}:c));
+    setRes(p=>({...p,livraison:livType,adresse:adr,livraisonStatut:"pending"}));
+    const typeLabel=livType==="les-deux"?"Aller-retour":"Livraison";
+    const msg=`🛵 *DEMANDE LIVRAISON*%0A%0A🎫 ${res.id}%0A👤 ${res.client}%0A📞 ${tel||res.tel||"—"}%0A📍 ${adr}%0A🔄 ${typeLabel}`;
+    sendWhatsApp("22879621085",msg);
     setSent(true);setShowLiv(false);
+  }
+
+  function demanderLivGeo(){
+    if(!navigator.geolocation){alert("Géolocalisation non disponible");return;}
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        const geoLink=`https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
+        setAdresse(geoLink);
+        demanderLiv(geoLink);
+      },
+      ()=>alert("Position indisponible. Entrez votre adresse manuellement.")
+    );
   }
 
   return (
@@ -1341,6 +1431,10 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
 
       {tab==="suivi"&&(
         <div style={{padding:"16px 20px 0"}}>
+
+          {/* Bouton ramassage à domicile */}
+          <RamassageBlock commandes={commandes} setCommandes={setCommandes} />
+
           <div style={{display:"flex",gap:10,marginBottom:14}}>
             <input value={rech} onChange={e=>setRech(e.target.value)} onKeyDown={e=>e.key==="Enter"&&chercher()} placeholder="N° ticket ou nom…" style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:15,outline:"none"}} />
             <button onClick={chercher} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px 16px",color:"#fff",fontWeight:700,fontSize:18,cursor:"pointer"}}>🔍</button>
@@ -1412,6 +1506,9 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
                     ))}
                   </div>
                   <input value={adresse} onChange={e=>setAdresse(e.target.value)} placeholder="Votre adresse *" style={{width:"100%",background:CARD,border:"1px solid rgba(168,85,247,0.3)",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+                  <button onClick={demanderLivGeo} style={{width:"100%",background:"#0D2A1A",border:"1px solid #25D36640",borderRadius:12,padding:"11px",color:"#25D366",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                    <span>📍</span> Envoyer ma position GPS
+                  </button>
                   <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone" style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}} />
                   <p style={{fontSize:11,color:"#A855F780",marginBottom:10}}>+{fmt(LIVRAISON_TARIF)} FCFA · Confirmation requise</p>
                   <button onClick={demanderLiv} disabled={!adresse} style={{width:"100%",background:adresse?"linear-gradient(135deg,#6B21A8,#A855F7)":CARD,border:"none",borderRadius:12,padding:"13px",color:adresse?"#fff":"#8892B0",fontWeight:700,fontSize:14,cursor:adresse?"pointer":"not-allowed"}}>Envoyer 🛵</button>
