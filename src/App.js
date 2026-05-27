@@ -1495,7 +1495,16 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
               <p style={{fontSize:13,color:"#8892B0",marginBottom:10}}>
                 <span style={{color:BLU2,fontWeight:700}}>{resAll[0]?.client}</span> — {resAll.length} commande{resAll.length>1?"s":""}
               </p>
+              {/* Filtres statut */}
+              <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto",paddingBottom:4}}>
+                {["Tous","En cours","Prêt","Récupéré"].map(s=>{
+                  const count=s==="Tous"?resAll.length:resAll.filter(c=>c.statut===s).length;
+                  const active=(!window._clientFilter&&s==="Tous")||(window._clientFilter===s);
+                  return count>0&&<button key={s} onClick={()=>{window._clientFilter=s==="Tous"?null:s;document.querySelectorAll("[data-cmd-filter]").forEach(el=>el.style.display=s==="Tous"||(el.dataset.cmdFilter===s)?"block":"none");}} style={{flexShrink:0,background:active?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${active?BLU2:BDR}`,borderRadius:20,padding:"5px 12px",color:active?"#fff":"#8892B0",fontWeight:700,fontSize:11,cursor:"pointer"}}>{s} ({count})</button>;
+                })}
+              </div>
               {resAll.map(c=>(
+                <div key={c.id} data-cmd-filter={c.statut}>
                 <div key={c.id} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${statutColor[c.statut]||BLU2}40`,cursor:"pointer"}} onClick={()=>{setRes(c);setResAll(null);}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                     <span style={{fontWeight:700,color:BLU2,fontSize:13}}>{c.id}</span>
@@ -2093,6 +2102,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
           {[
+            {id:"apropos",   icon:"ℹ️",  label:"À propos de JOKER",      sub:"Horaires, adresse, services"},
             {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
             {id:"paiements", icon:"💳", label:"Mobile Money",          sub:"Modifier numéros Flooz/T-Money"},
             {id:"tarifs",    icon:"💲", label:"Gérer les tarifs",      sub:"Modifier les prix et services"},
@@ -2129,6 +2139,51 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
       {tab==="factures"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><HistoriqueFactures commandes={commandes} tarifs={tarifs} /></div>
       )}
+      {tab==="apropos"&&(
+        <div style={{padding:"20px",animation:"fadeIn 0.4s ease"}}>
+          <button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:14,marginBottom:16}}>← Retour</button>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <Logo size={80} style={{margin:"0 auto 12px"}} />
+            <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:28,letterSpacing:3}}>JOKER LAVERIE</h2>
+            <p style={{color:BLU2,fontWeight:700,letterSpacing:2,fontSize:13}}>LAVERIE & SERVICE</p>
+            <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>Propreté · Qualité · Fiabilité</p>
+          </div>
+          {/* Horaires */}
+          <div style={{background:CARD,borderRadius:16,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+            <p style={{fontWeight:700,color:BLU2,fontSize:13,marginBottom:10,letterSpacing:1}}>🕐 HORAIRES D'OUVERTURE</p>
+            {[["Lundi – Samedi","7h00 – 20h00"],["Dimanche","8h00 – 14h00"],["Jours fériés","8h00 – 13h00"]].map(([j,h])=>(
+              <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${BDR}`}}>
+                <span style={{fontSize:13,color:"#8892B0"}}>{j}</span>
+                <span style={{fontSize:13,fontWeight:700,color:"#F8FAFF"}}>{h}</span>
+              </div>
+            ))}
+          </div>
+          {/* Services */}
+          <div style={{background:CARD,borderRadius:16,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+            <p style={{fontWeight:700,color:BLU2,fontSize:13,marginBottom:10,letterSpacing:1}}>🧺 NOS SERVICES</p>
+            {["🫧 Laverie","👔 Repassage","📦 Pliage","🛵 Livraison à domicile","✨ Nettoyage à sec"].map(s=>(
+              <div key={s} style={{padding:"6px 0",borderBottom:`1px solid ${BDR}`,fontSize:13,color:"#F8FAFF"}}>{s}</div>
+            ))}
+          </div>
+          {/* Contact */}
+          <div style={{background:CARD,borderRadius:16,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+            <p style={{fontWeight:700,color:BLU2,fontSize:13,marginBottom:10,letterSpacing:1}}>📞 CONTACT</p>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${BDR}`}}>
+              <span style={{fontSize:13,color:"#8892B0"}}>🟢 Flooz</span>
+              <span style={{fontWeight:700,color:"#F8FAFF"}}>{JOKER_FLOOZ}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${BDR}`}}>
+              <span style={{fontSize:13,color:"#8892B0"}}>🔴 T-Money</span>
+              <span style={{fontWeight:700,color:"#F8FAFF"}}>{JOKER_TMONEY}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0"}}>
+              <span style={{fontSize:13,color:"#8892B0"}}>📍 Adresse</span>
+              <span style={{fontWeight:700,color:"#F8FAFF",textAlign:"right",maxWidth:"60%"}}>Lomé, Togo</span>
+            </div>
+          </div>
+          <p style={{textAlign:"center",color:"#8892B0",fontSize:11,marginTop:8}}>Version 1.0 · JOKER Laverie & Service</p>
+        </div>
+      )}
       {tab==="clients"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} /></div>
       )}
@@ -2141,7 +2196,8 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
           <button key={tb.id} onClick={()=>setTab(tb.id)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3,color:tab===tb.id?BLU2:"#8892B0",position:"relative"}}>
             <span style={{fontSize:18}}>{tb.icon}</span>
             <span style={{fontSize:9,fontWeight:600}}>{tb.label}</span>
-            {tb.id==="livraisons"&&alerts>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#A855F7",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px"}}>{alerts}</span>}
+            {tb.id==="livraisons"&&enAttente>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#A855F7",color:"#fff",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{enAttente}</span>}
+            {tb.id==="commandes"&&commandes.filter(c=>c.statut==="Prêt"&&!c.paiementConfirme).length>0&&<span style={{position:"absolute",top:-4,right:-4,background:CYAN,color:"#0A0F1E",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{commandes.filter(c=>c.statut==="Prêt"&&!c.paiementConfirme).length}</span>}
           </button>
         ))}
       </div>
@@ -2333,12 +2389,27 @@ export default function App(){
             <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:36,letterSpacing:4}}>JOKER</h1>
             <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:BLU2,letterSpacing:3}}>LAVERIE & SERVICE</p>
             <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,marginTop:6,marginBottom:6}}>PROPRETÉ · QUALITÉ · FIABILITÉ</p>
-            <p style={{color:`${BLU2}60`,fontSize:12,marginBottom:44}}>Lomé, Togo</p>
+            <p style={{color:`${BLU2}60`,fontSize:12,marginBottom:8}}>Lomé, Togo</p>
+            {/* Message d'accueil selon l'heure */}
+            <p style={{color:CYAN,fontSize:13,fontWeight:600,marginBottom:32,animation:"fadeIn 0.8s ease"}}>
+              {(()=>{const h=new Date().getHours();return h<12?"🌅 Bonjour ! Bienvenue chez JOKER":h<18?"☀️ Bon après-midi ! Bienvenue chez JOKER":"🌙 Bonsoir ! Bienvenue chez JOKER";})()}
+            </p>
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <button onClick={()=>setScreen("gerant-pin")} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:20,padding:"20px",color:"#fff",fontWeight:700,fontSize:17,cursor:"pointer",boxShadow:"0 8px 32px rgba(26,62,189,0.5)"}}>👨‍💼 Espace Gérant</button>
               <button onClick={()=>setScreen("client")} style={{background:CARD,border:`1px solid ${BDR}`,borderRadius:20,padding:"20px",color:"#F8FAFF",fontWeight:700,fontSize:17,cursor:"pointer"}}>👤 Espace Client</button>
             </div>
-            <p style={{color:`${BLU2}50`,fontSize:11,marginTop:28}}>Flooz · T-Money · Espèces · 🛵 Livraison</p>
+            {/* Horaires */}
+            <div style={{marginTop:28,background:CARD,borderRadius:16,padding:"14px 20px",border:`1px solid ${BDR}`,textAlign:"left"}}>
+              <p style={{fontWeight:700,fontSize:12,color:BLU2,marginBottom:8,letterSpacing:1}}>🕐 HORAIRES D'OUVERTURE</p>
+              {[["Lun – Sam","7h00 – 20h00"],["Dimanche","8h00 – 14h00"]].map(([j,h])=>(
+                <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${BDR}`}}>
+                  <span style={{fontSize:12,color:"#8892B0"}}>{j}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:"#F8FAFF"}}>{h}</span>
+                </div>
+              ))}
+              <p style={{fontSize:11,color:"#8892B0",marginTop:8,textAlign:"center"}}>📍 Lomé, Togo</p>
+            </div>
+            <p style={{color:`${BLU2}50`,fontSize:11,marginTop:16}}>Flooz · T-Money · Espèces · 🛵 Livraison</p>
           </div>
         )}
 
