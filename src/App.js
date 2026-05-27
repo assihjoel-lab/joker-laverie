@@ -195,6 +195,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
         ))}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <button onClick={()=>imprimerTicket(ticket,tarifs)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>🖨️ Imprimer le ticket</button>
         {ticket.tel&&<button onClick={()=>sendWhatsApp(ticket.tel, buildFacture(ticket, tarifs))} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:14,color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture WhatsApp</button>}
         <Btn label="Voir les commandes →" onClick={onDone} />
       </div>
@@ -256,6 +257,78 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
 }
 
 // ─── COMMANDE CARD ────────────────────────────────────────
+// ─── IMPRESSION TICKET ───────────────────────────────────
+function imprimerTicket(c, tarifs){
+  const tarif = tarifs?.find(t=>t.id===c.tarifId)||{label:"Service",prix:c.tarif||0};
+  const pmt   = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
+  const frais = c.livraison ? LIVRAISON_TARIF : 0;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
+
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<title>Ticket ${c.id}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Inter',sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:6mm;}
+  .center{text-align:center;}
+  .title{font-family:'Bebas Neue',cursive;font-size:22px;letter-spacing:3px;margin:6px 0 2px;}
+  .sub{font-size:10px;color:#666;letter-spacing:2px;margin-bottom:2px;}
+  .sep{border:none;border-top:1px dashed #ccc;margin:8px 0;}
+  .row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}
+  .row span:first-child{color:#666;}
+  .row span:last-child{font-weight:700;}
+  .total{font-size:15px;font-weight:700;color:#1A3EBD;}
+  .badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:1px;margin:6px 0;}
+  .qr{margin:10px auto 4px;display:block;}
+  .qr-label{font-size:9px;color:#999;letter-spacing:1px;text-transform:uppercase;}
+  .footer{font-size:10px;color:#999;margin-top:8px;line-height:1.5;}
+  .est{background:#fff8e1;border:1px solid #ffb800;border-radius:6px;padding:5px 8px;font-size:11px;color:#b45309;margin:6px 0;}
+  @media print{body{width:80mm;}}
+</style>
+</head>
+<body>
+  <div class="center">
+    <div class="title">🃏 JOKER LAVERIE</div>
+    <div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ</div>
+    <div class="sub">Lomé, Togo</div>
+    <span class="badge">${c.statut||"En cours"}</span>
+  </div>
+  <hr class="sep"/>
+  ${c.poidsStatut==="estimated"?`<div class="est">⚖️ Poids estimé — à confirmer</div>`:""}
+  <div class="row"><span>N° Ticket</span><span>${c.id}</span></div>
+  <div class="row"><span>Date</span><span>${c.date}</span></div>
+  <div class="row"><span>Client</span><span>${c.client}</span></div>
+  ${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}
+  <div class="row"><span>Service</span><span>${tarif.label}</span></div>
+  <div class="row"><span>Poids</span><span>${c.poids} kg</span></div>
+  <div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>
+  ${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} FCFA</span></div>`:""}
+  <hr class="sep"/>
+  <div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div>
+  <div class="row"><span>Paiement</span><span>${pmt.label}</span></div>
+  <div class="row"><span>Points fidélité</span><span>+${c.points||0} 🏅</span></div>
+  <hr class="sep"/>
+  <div class="center">
+    <img class="qr" src="${qrUrl}" width="110" height="110" alt="QR Code"/>
+    <div class="qr-label">Scannez pour suivre votre commande</div>
+  </div>
+  <hr class="sep"/>
+  <div class="center footer">
+    Merci de votre confiance !<br/>
+    Conservez ce ticket pour le retrait.
+  </div>
+</body>
+</html>`;
+
+  const w = window.open("","_blank","width=400,height=600");
+  w.document.write(html);
+  w.document.close();
+  w.onload = ()=>{ w.focus(); w.print(); };
+}
+
 // ─── QR CODE (URL vers espace client avec N° ticket) ─────
 function QRCode({ value, size=120 }){
   // Génère un QR code via API Google Charts (pas de lib externe)
@@ -268,7 +341,7 @@ function QRCode({ value, size=120 }){
   );
 }
 
-function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,hasTel }){
+function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,hasTel }){
   const [edit,setEdit]=useState(false);
   const [nvP,setNvP]=useState(String(c.poids));
   const [confirmRefus,setConfirmRefus]=useState(false);
@@ -329,6 +402,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         <span style={{color:CYAN,fontWeight:700,fontSize:15,flex:1}}>{fmt(c.total)} F {c.paiementConfirme?"✅":""}</span>
         {c.statut!=="Récupéré"&&<button onClick={onPay} style={{background:c.paiementConfirme?"#0D3B2E":`linear-gradient(135deg,#004d20,${BLU})`,border:`1px solid ${c.paiementConfirme?CYAN+"40":"rgba(0,166,81,0.3)"}`,borderRadius:10,color:c.paiementConfirme?CYAN:"#fff",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{c.paiementConfirme?"✅ Payé":"💳 Payer"}</button>}
         {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>💬 WA</button>}
+        <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
       </div>
@@ -1812,7 +1886,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
             });
             if(liste.length===0) return <p style={{color:"#8892B0",textAlign:"center",marginTop:20}}>Aucune commande trouvée.</p>;
             return liste.map(c=>(
-              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} hasTel={!!c.tel} />
+              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>imprimerTicket(c,tarifs)} hasTel={!!c.tel} />
             ));
           })()}
         </div>
