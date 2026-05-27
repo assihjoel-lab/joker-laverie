@@ -156,6 +156,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
   const [livraison,setLiv]=useState(null);
   const [adresse,setAdresse]=useState("");
   const [ticket,setTicket]=useState(null);
+  const [ticketPrint,setTicketPrint]=useState(null);
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
   const sousTotal=poids?Math.round(parseFloat(poids)*tarif.prix):0;
@@ -179,6 +180,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
     sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\n🎫 Ticket: ${c.id}\n👤 ${c.client}\n⚖️ ${c.poids}kg\n💰 ${fmt(c.total)} FCFA\n💳 ${PAIEMENTS.find(p=>p.id===c.paiement)?.label}\n🏅 +${c.points} points\n\nLomé, Togo — Merci! 🙏`);
   }
 
+  if(ticketPrint) return <TicketModal c={ticketPrint} tarifs={tarifs} onClose={()=>setTicketPrint(null)} />;
   if(ticket) return (
     <div style={{padding:"24px 20px",animation:"fadeIn 0.4s ease"}}>
       <div style={{textAlign:"center",marginBottom:16}}>
@@ -195,8 +197,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
         ))}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
-        <button onClick={()=>imprimerTicket(ticket,tarifs)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>🖨️ Imprimer le ticket</button>
-        {ticket.tel&&<button onClick={()=>sendWhatsApp(ticket.tel, buildFacture(ticket, tarifs))} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:14,color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture WhatsApp</button>}
+        <button onClick={()=>setTicketPrint(ticket)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>🖨️ Imprimer le ticket</button>        {ticket.tel&&<button onClick={()=>sendWhatsApp(ticket.tel, buildFacture(ticket, tarifs))} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:14,color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture WhatsApp</button>}
         <Btn label="Voir les commandes →" onClick={onDone} />
       </div>
     </div>
@@ -258,76 +259,119 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
 
 // ─── COMMANDE CARD ────────────────────────────────────────
 // ─── IMPRESSION TICKET ───────────────────────────────────
-function imprimerTicket(c, tarifs){
+// ─── MODAL TICKET IMPRIMABLE ─────────────────────────────
+function TicketModal({ c, tarifs, onClose }){
   const tarif = tarifs?.find(t=>t.id===c.tarifId)||{label:"Service",prix:c.tarif||0};
   const pmt   = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
   const frais = c.livraison ? LIVRAISON_TARIF : 0;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
 
-  const html = `<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8"/>
-<title>Ticket ${c.id}</title>
+  function imprimer(){
+    const el = document.getElementById("joker-ticket-print");
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;600;700&display=swap');
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Inter',sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:6mm;}
-  .center{text-align:center;}
-  .title{font-family:'Bebas Neue',cursive;font-size:22px;letter-spacing:3px;margin:6px 0 2px;}
-  .sub{font-size:10px;color:#666;letter-spacing:2px;margin-bottom:2px;}
-  .sep{border:none;border-top:1px dashed #ccc;margin:8px 0;}
-  .row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}
-  .row span:first-child{color:#666;}
-  .row span:last-child{font-weight:700;}
-  .total{font-size:15px;font-weight:700;color:#1A3EBD;}
-  .badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:6px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:1px;margin:6px 0;}
-  .qr{margin:10px auto 4px;display:block;}
-  .qr-label{font-size:9px;color:#999;letter-spacing:1px;text-transform:uppercase;}
-  .footer{font-size:10px;color:#999;margin-top:8px;line-height:1.5;}
-  .est{background:#fff8e1;border:1px solid #ffb800;border-radius:6px;padding:5px 8px;font-size:11px;color:#b45309;margin:6px 0;}
-  @media print{body{width:80mm;}}
-</style>
-</head>
-<body>
-  <div class="center">
-    <div class="title">🃏 JOKER LAVERIE</div>
-    <div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ</div>
-    <div class="sub">Lomé, Togo</div>
-    <span class="badge">${c.statut||"En cours"}</span>
-  </div>
-  <hr class="sep"/>
-  ${c.poidsStatut==="estimated"?`<div class="est">⚖️ Poids estimé — à confirmer</div>`:""}
-  <div class="row"><span>N° Ticket</span><span>${c.id}</span></div>
-  <div class="row"><span>Date</span><span>${c.date}</span></div>
-  <div class="row"><span>Client</span><span>${c.client}</span></div>
-  ${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}
-  <div class="row"><span>Service</span><span>${tarif.label}</span></div>
-  <div class="row"><span>Poids</span><span>${c.poids} kg</span></div>
-  <div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>
-  ${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} FCFA</span></div>`:""}
-  <hr class="sep"/>
-  <div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div>
-  <div class="row"><span>Paiement</span><span>${pmt.label}</span></div>
-  <div class="row"><span>Points fidélité</span><span>+${c.points||0} 🏅</span></div>
-  <hr class="sep"/>
-  <div class="center">
-    <img class="qr" src="${qrUrl}" width="110" height="110" alt="QR Code"/>
-    <div class="qr-label">Scannez pour suivre votre commande</div>
-  </div>
-  <hr class="sep"/>
-  <div class="center footer">
-    Merci de votre confiance !<br/>
-    Conservez ce ticket pour le retrait.
-  </div>
-</body>
-</html>`;
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:5mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.center{text-align:center;}
+.logo{width:60px;height:60px;border-radius:50%;object-fit:cover;margin-bottom:4px;}
+.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:2px 0;}
+.sub{font-size:9px;color:#666;letter-spacing:2px;margin-bottom:1px;}
+.sep{border:none;border-top:1px dashed #bbb;margin:6px 0;}
+.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;margin:4px 0;}
+.row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}
+.row span:first-child{color:#666;}
+.row span:last-child{font-weight:700;}
+.total{font-size:14px;font-weight:900;color:#1A3EBD;}
+.qr{margin:8px auto 2px;display:block;}
+.qr-label{font-size:8px;color:#999;letter-spacing:1px;}
+.footer{font-size:9px;color:#999;margin-top:6px;line-height:1.5;}
+.est{background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px 6px;font-size:10px;color:#b45309;margin:4px 0;}
+@media print{body{width:80mm;} button{display:none;}}
+</style></head><body>
+<div class="center">
+<img src="${LOGO_B64}" class="logo" alt="JOKER"/>
+<div class="title">JOKER LAVERIE</div>
+<div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ</div>
+<div class="sub">Lomé, Togo</div>
+<span class="badge">${c.statut||"En cours"}</span>
+</div>
+<hr class="sep"/>
+${c.poidsStatut==="estimated"?`<div class="est">⚖️ Poids estimé — à confirmer</div>`:""}
+<div class="row"><span>N° Ticket</span><span>${c.id}</span></div>
+<div class="row"><span>Date</span><span>${c.date}</span></div>
+<div class="row"><span>Client</span><span>${c.client}</span></div>
+${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}
+<div class="row"><span>Service</span><span>${tarif.label}</span></div>
+<div class="row"><span>Poids</span><span>${c.poids} kg</span></div>
+<div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>
+${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} FCFA</span></div>`:""}
+<hr class="sep"/>
+<div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div>
+<div class="row"><span>Paiement</span><span>${pmt.label}</span></div>
+<div class="row"><span>Points fidélité</span><span>+${c.points||0} 🏅</span></div>
+<hr class="sep"/>
+<div class="center">
+<img class="qr" src="${qrUrl}" width="110" height="110" alt="QR"/>
+<div class="qr-label">Scannez pour suivre votre commande</div>
+</div>
+<hr class="sep"/>
+<div class="center footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>
+</body></html>`;
+    const w = window.open("","_blank","width=420,height=650");
+    if(w){ w.document.write(html); w.document.close(); w.onload=()=>{w.focus();w.print();}; }
+  }
 
-  const w = window.open("","_blank","width=400,height=600");
-  w.document.write(html);
-  w.document.close();
-  w.onload = ()=>{ w.focus(); w.print(); };
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",padding:"16px 12px",overflowY:"auto"}}
+      onClick={e=>e.target===e.currentTarget&&onClose()}>
+      {/* Boutons fixes en haut */}
+      <div style={{display:"flex",gap:10,marginBottom:14,width:"100%",maxWidth:340}}>
+        <button onClick={onClose} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"12px",color:"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer"}}>← Retour</button>
+        <button onClick={imprimer} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>🖨️ Imprimer</button>
+      </div>
+
+      {/* Ticket visuel */}
+      <div id="joker-ticket-print" style={{background:"#fff",color:"#111",borderRadius:16,padding:"20px 18px",width:"100%",maxWidth:340,boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
+        {/* En-tête */}
+        <div style={{textAlign:"center",marginBottom:12}}>
+          <img src={LOGO_B64} alt="JOKER" style={{width:64,height:64,borderRadius:"50%",objectFit:"cover",marginBottom:6}} />
+          <div style={{fontWeight:900,fontSize:18,letterSpacing:3,color:"#111"}}>JOKER LAVERIE</div>
+          <div style={{fontSize:9,color:"#888",letterSpacing:2,marginTop:2}}>PROPRETÉ · QUALITÉ · FIABILITÉ</div>
+          <div style={{fontSize:9,color:"#888",letterSpacing:2}}>Lomé, Togo</div>
+          <div style={{display:"inline-block",background:"#1A3EBD",color:"#fff",borderRadius:4,padding:"2px 10px",fontSize:10,fontWeight:700,marginTop:6}}>{c.statut||"En cours"}</div>
+        </div>
+        <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
+        {c.poidsStatut==="estimated"&&<div style={{background:"#fff8e1",border:"1px solid #ffb800",borderRadius:4,padding:"4px 8px",fontSize:10,color:"#b45309",marginBottom:6}}>⚖️ Poids estimé — à confirmer</div>}
+        {/* Lignes */}
+        {[["N° Ticket",c.id],["Date",c.date],["Client",c.client],c.tel?["Téléphone",c.tel]:null,["Service",tarif.label],["Poids",c.poids+" kg"],["Tarif",fmt(c.tarif||0)+" F/kg"],c.livraison?["Livraison 🛵","+"+fmt(frais)+" FCFA"]:null].filter(Boolean).map(([k,v])=>(
+          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
+            <span style={{color:"#666"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
+          </div>
+        ))}
+        <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
+        <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
+          <span style={{color:"#666"}}>TOTAL</span><span style={{fontWeight:900,color:"#1A3EBD",fontSize:15}}>{fmt(c.total)} FCFA</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:11}}>
+          <span style={{color:"#666"}}>Paiement</span><span style={{fontWeight:700}}>{pmt.label}</span>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",padding:"3px 0",fontSize:11}}>
+          <span style={{color:"#666"}}>Points fidélité</span><span style={{fontWeight:700}}>+{c.points||0} 🏅</span>
+        </div>
+        <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
+        {/* QR Code */}
+        <div style={{textAlign:"center"}}>
+          <img src={qrUrl} width={110} height={110} alt="QR" style={{display:"block",margin:"0 auto 4px"}} />
+          <div style={{fontSize:8,color:"#999",letterSpacing:1,textTransform:"uppercase"}}>Scannez pour suivre votre commande</div>
+        </div>
+        <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
+        <div style={{textAlign:"center",fontSize:9,color:"#999",lineHeight:1.5}}>Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>
+      </div>
+    </div>
+  );
 }
+
+function imprimerTicket(){ /* remplacé par TicketModal */ }
 
 // ─── QR CODE (URL vers espace client avec N° ticket) ─────
 function QRCode({ value, size=120 }){
@@ -1312,6 +1356,7 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
 
   return (
     <div style={{paddingBottom:70}}>
+      {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
       <div style={{padding:"32px 20px 0",textAlign:"center"}}>
         <Logo size={80} style={{margin:"0 auto 12px"}} />
         <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:3}}>JOKER LAVERIE</h1>
@@ -1799,6 +1844,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){setCommandes(p=>p.filter(c=>c.id!==id));}
+  const [ticketModal,setTicketModal]=useState(null);
   function confirmerPaiement(id,mode){setCommandes(p=>p.map(c=>c.id===id?{...c,paiement:mode,paiementConfirme:true}:c));setPayCmd(null);}
 
   const tabs=[
@@ -1886,7 +1932,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
             });
             if(liste.length===0) return <p style={{color:"#8892B0",textAlign:"center",marginTop:20}}>Aucune commande trouvée.</p>;
             return liste.map(c=>(
-              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>imprimerTicket(c,tarifs)} hasTel={!!c.tel} />
+              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} hasTel={!!c.tel} />
             ));
           })()}
         </div>
