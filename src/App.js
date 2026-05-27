@@ -267,72 +267,21 @@ function TicketModal({ c, tarifs, onClose }){
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
 
   function imprimer(){
-    const el = document.getElementById("joker-ticket-print");
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
-<style>
-*{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:5mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-.center{text-align:center;}
-.logo{width:60px;height:60px;border-radius:50%;object-fit:cover;margin-bottom:4px;}
-.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:2px 0;}
-.sub{font-size:9px;color:#666;letter-spacing:2px;margin-bottom:1px;}
-.sep{border:none;border-top:1px dashed #bbb;margin:6px 0;}
-.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;margin:4px 0;}
-.row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}
-.row span:first-child{color:#666;}
-.row span:last-child{font-weight:700;}
-.total{font-size:14px;font-weight:900;color:#1A3EBD;}
-.qr{margin:8px auto 2px;display:block;}
-.qr-label{font-size:8px;color:#999;letter-spacing:1px;}
-.footer{font-size:9px;color:#999;margin-top:6px;line-height:1.5;}
-.est{background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px 6px;font-size:10px;color:#b45309;margin:4px 0;}
-@media print{body{width:80mm;} button{display:none;}}
-</style></head><body>
-<div class="center">
-<img src="${LOGO_B64}" class="logo" alt="JOKER"/>
-<div class="title">JOKER LAVERIE</div>
-<div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ</div>
-<div class="sub">Lomé, Togo</div>
-<span class="badge">${c.statut||"En cours"}</span>
-</div>
-<hr class="sep"/>
-${c.poidsStatut==="estimated"?`<div class="est">⚖️ Poids estimé — à confirmer</div>`:""}
-<div class="row"><span>N° Ticket</span><span>${c.id}</span></div>
-<div class="row"><span>Date</span><span>${c.date}</span></div>
-<div class="row"><span>Client</span><span>${c.client}</span></div>
-${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}
-<div class="row"><span>Service</span><span>${tarif.label}</span></div>
-<div class="row"><span>Poids</span><span>${c.poids} kg</span></div>
-<div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>
-${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} FCFA</span></div>`:""}
-<hr class="sep"/>
-<div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div>
-<div class="row"><span>Paiement</span><span>${pmt.label}</span></div>
-<div class="row"><span>Points fidélité</span><span>+${c.points||0} 🏅</span></div>
-<hr class="sep"/>
-<div class="center">
-<img class="qr" src="${qrUrl}" width="110" height="110" alt="QR"/>
-<div class="qr-label">Scannez pour suivre votre commande</div>
-</div>
-<hr class="sep"/>
-<div class="center footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>
-</body></html>`;
-    // Méthode 1: Nouvelle fenêtre pour impression
-    const w = window.open("","_blank","width=420,height=650");
-    if(w){
-      w.document.write(html);
-      w.document.close();
-      w.onload=()=>{w.focus();w.print();};
-    } else {
-      // Méthode 2: Téléchargement direct si popup bloqué
-      const blob = new Blob([html], {type:"text/html;charset=utf-8"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ticket-${c.id}.html`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
+    // Injection d'un style d'impression dans la page courante
+    const existing = document.getElementById("joker-print-style");
+    if(existing) existing.remove();
+    const style = document.createElement("style");
+    style.id = "joker-print-style";
+    style.innerHTML = `
+      @media print {
+        body > * { display: none !important; }
+        #joker-ticket-print-wrapper { display: block !important; position: fixed; inset: 0; z-index: 99999; background: white; }
+        #joker-ticket-print { display: block !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    window.print();
+    setTimeout(()=>{ style.remove(); }, 1000);
   }
 
   return (
@@ -345,7 +294,7 @@ ${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} 
       </div>
 
       {/* Ticket visuel */}
-      <div id="joker-ticket-print" style={{background:"#fff",color:"#111",borderRadius:16,padding:"20px 18px",width:"100%",maxWidth:340,boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
+      <div id="joker-ticket-print-wrapper"><div id="joker-ticket-print" style={{background:"#fff",color:"#111",borderRadius:16,padding:"20px 18px",width:"100%",maxWidth:340,boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
         {/* En-tête */}
         <div style={{textAlign:"center",marginBottom:12}}>
           <img src={LOGO_B64} alt="JOKER" style={{width:64,height:64,borderRadius:"50%",objectFit:"cover",marginBottom:6}} />
@@ -381,6 +330,7 @@ ${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} 
         <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
         <div style={{textAlign:"center",fontSize:9,color:"#999",lineHeight:1.5}}>Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>
       </div>
+</div>
     </div>
   );
 }
