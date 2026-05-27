@@ -2016,18 +2016,15 @@ function ClientsDB({ commandes }) {
 function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
-  const [notifDismissed,setNotifDismissed]=useState(false);
+  const notifShownRef = useState(false);
   const pendingLivs = commandes.filter(c=>c.livraisonStatut==="pending");
 
-  // Show all pending livraisons on load and when new ones arrive
+  // Show pending livraisons as soon as commandes are loaded
   useEffect(()=>{
-    if(pendingLivs.length>0 && !notifDismissed){
+    if(pendingLivs.length>0){
       setNotifPop(pendingLivs);
-    } else if(pendingLivs.length===0){
-      setNotifPop(null);
-      setNotifDismissed(false);
     }
-  },[pendingLivs.length]);
+  },[JSON.stringify(pendingLivs.map(c=>c.id))]);
   const [payCmd,setPayCmd]=useState(null);
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
@@ -2127,7 +2124,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
       <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:9999,width:"92%",maxWidth:390,background:"linear-gradient(135deg,#1A0D3D,#2D1060)",border:"2px solid #A855F7",borderRadius:20,padding:"16px 18px",boxShadow:"0 8px 32px rgba(168,85,247,0.4)",animation:"slideUp 0.3s ease",maxHeight:"80vh",overflowY:"auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <p style={{color:"#A855F7",fontWeight:700,fontSize:14}}>🛵 {notifPop.length} demande{notifPop.length>1?"s":""} de livraison en attente</p>
-          <button onClick={()=>{setNotifPop(null);setNotifDismissed(true);}} style={{background:"none",border:"none",color:"#8892B0",fontSize:20,cursor:"pointer"}}>✕</button>
+          <button onClick={()=>setNotifPop(null)} style={{background:"none",border:"none",color:"#8892B0",fontSize:20,cursor:"pointer"}}>✕</button>
         </div>
         {notifPop.map(cmd=>(
           <div key={cmd.id} style={{background:"rgba(255,255,255,0.05)",borderRadius:14,padding:"10px 12px",marginBottom:8,border:"1px solid #A855F730"}}>
@@ -2143,8 +2140,8 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
           </div>
         ))}
         <div style={{display:"flex",gap:8,marginTop:10}}>
-          <button onClick={()=>{setTab("livraisons");setNotifPop(null);setNotifDismissed(true);}} style={{flex:1,background:"linear-gradient(135deg,#A855F7,#7C3AED)",border:"none",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>🛵 Livreurs</button>
-          <button onClick={()=>{setTab("commandes");setNotifPop(null);setNotifDismissed(true);}} style={{flex:1,background:"#1A1030",border:"1px solid #A855F740",borderRadius:12,padding:"10px",color:"#A855F7",fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Commandes</button>
+          <button onClick={()=>{setTab("livraisons");setNotifPop(null);}} style={{flex:1,background:"linear-gradient(135deg,#A855F7,#7C3AED)",border:"none",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>🛵 Livreurs</button>
+          <button onClick={()=>{setTab("commandes");setNotifPop(null);}} style={{flex:1,background:"#1A1030",border:"1px solid #A855F740",borderRadius:12,padding:"10px",color:"#A855F7",fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Commandes</button>
         </div>
       </div>
     )}
