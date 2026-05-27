@@ -256,6 +256,18 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,tarifs,onBack,onDon
 }
 
 // ─── COMMANDE CARD ────────────────────────────────────────
+// ─── QR CODE (URL vers espace client avec N° ticket) ─────
+function QRCode({ value, size=120 }){
+  // Génère un QR code via API Google Charts (pas de lib externe)
+  const url = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(value)}&bgcolor=111D3D&color=00C2FF&qzone=1&format=svg`;
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+      <img src={url} alt="QR Code" width={size} height={size} style={{borderRadius:12,border:`2px solid rgba(0,194,255,0.3)`}} />
+      <p style={{fontSize:9,color:"#8892B0",letterSpacing:1,textTransform:"uppercase"}}>Scanner pour suivre</p>
+    </div>
+  );
+}
+
 function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,hasTel }){
   const [edit,setEdit]=useState(false);
   const [nvP,setNvP]=useState(String(c.poids));
@@ -265,11 +277,15 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
   return (
     <div style={{background:CARD,borderRadius:20,padding:16,marginBottom:12,border:`1px solid ${c.poidsStatut==="estimated"?"rgba(255,184,0,0.25)":BDR}`}}>
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-        <div>
+        <div style={{flex:1}}>
           <p style={{fontWeight:700,fontSize:15}}>{c.client}</p>
           <p style={{fontSize:12,color:"#8892B0"}}>{c.id} · {c.date} {c.livraison?"· 🛵":""}</p>
+          {c.tel&&<p style={{fontSize:11,color:"#8892B0",marginTop:2}}>📞 {c.tel}</p>}
         </div>
-        <Badge statut={c.statut} />
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+          <Badge statut={c.statut} />
+          <QRCode value={`${window.location.origin}?ticket=${c.id}`} size={64} />
+        </div>
       </div>
       <div style={{background:c.poidsStatut==="estimated"?"#1A0D00":"#0A0F1E",borderRadius:10,padding:"10px 14px",marginBottom:10,border:`1px solid ${c.poidsStatut==="estimated"?"#FFB80040":BDR}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -316,6 +332,14 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
       </div>
+
+      {/* Note client */}
+      {c.note&&(
+        <div style={{marginTop:8,background:"#0D1A0D",borderRadius:10,padding:"8px 12px",border:"1px solid #4ADE8030",display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:14}}>{"⭐".repeat(c.note)}</span>
+          {c.commentaire&&<span style={{fontSize:12,color:"#8892B0",fontStyle:"italic"}}>"{c.commentaire}"</span>}
+        </div>
+      )}
 
       {/* Suppression avec confirmation */}
       {!confirmDel ? (
@@ -609,9 +633,13 @@ function Caisse({ commandes,tarifs }){
         <p style={{color:BLU2,fontSize:12,marginTop:6}}>{filtered.length} commande(s)</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-        {[{l:"Panier moyen",v:filtered.length?fmt(Math.round(ca/filtered.length))+" F":"—",c:BLU2},{l:"Livraisons",v:filtered.filter(c=>c.livraison).length,c:"#A855F7"}].map(k=>(
+        {(()=>{
+          const noted=filtered.filter(c=>c.note);
+          const avg=noted.length?Math.round(noted.reduce((s,c)=>s+c.note,0)/noted.length*10)/10:null;
+          return [{l:"Panier moyen",v:filtered.length?fmt(Math.round(ca/filtered.length))+" F":"—",c:BLU2},{l:"Livraisons",v:filtered.filter(c=>c.livraison).length,c:"#A855F7"},{l:"Avis clients",v:noted.length?`${"⭐".repeat(Math.round(avg))} ${avg}/5`:"—",c:"#FFB800"},{l:"Avis reçus",v:noted.length,c:"#4ADE80"}];
+        })().map(k=>(
           <div key={k.l} style={{background:CARD,borderRadius:14,padding:14,border:`1px solid ${BDR}`,textAlign:"center"}}>
-            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:k.c}}>{k.v}</p>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:k.l==="Avis clients"?16:22,color:k.c}}>{k.v}</p>
             <p style={{fontSize:11,color:"#8892B0",marginTop:3}}>{k.l}</p>
           </div>
         ))}
@@ -1105,10 +1133,73 @@ function ClientFidelite({ commandes, rewards }){
   );
 }
 
+// ─── ÉVALUATION CLIENT ────────────────────────────────────
+function EvaluationBlock({ commande, setCommandes }){
+  const [note, setNote] = useState(commande.note||0);
+  const [hover, setHover] = useState(0);
+  const [commentaire, setCommentaire] = useState(commande.commentaire||"");
+  const [submitted, setSubmitted] = useState(!!commande.note);
+
+  function soumettre(){
+    if(!note) return;
+    setCommandes(p=>p.map(c=>c.id===commande.id?{...c,note,commentaire}:c));
+    setSubmitted(true);
+  }
+
+  if(submitted){
+    return (
+      <div style={{marginTop:14,background:"linear-gradient(135deg,#0D2A3D,#0D1F6E22)",borderRadius:16,padding:16,border:`1px solid ${CYAN}30`,textAlign:"center",animation:"fadeIn 0.3s ease"}}>
+        <p style={{fontSize:24,marginBottom:6}}>{"⭐".repeat(note)}</p>
+        <p style={{color:CYAN,fontWeight:700,fontSize:14,marginBottom:4}}>Merci pour votre avis !</p>
+        {commentaire&&<p style={{color:"#8892B0",fontSize:12,fontStyle:"italic"}}>"{commentaire}"</p>}
+        <p style={{color:"#8892B0",fontSize:11,marginTop:8}}>Votre retour nous aide à nous améliorer 🙏</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{marginTop:14,background:CARD,borderRadius:16,padding:16,border:`1px solid ${BDR}`,animation:"fadeIn 0.3s ease"}}>
+      <p style={{fontWeight:700,fontSize:14,marginBottom:4}}>⭐ Notez votre expérience</p>
+      <p style={{color:"#8892B0",fontSize:12,marginBottom:12}}>Comment s'est passée votre visite chez JOKER Laverie ?</p>
+      {/* Étoiles */}
+      <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:14}}>
+        {[1,2,3,4,5].map(n=>(
+          <button key={n}
+            onClick={()=>setNote(n)}
+            onMouseEnter={()=>setHover(n)}
+            onMouseLeave={()=>setHover(0)}
+            style={{background:"none",border:"none",fontSize:32,cursor:"pointer",transition:"transform 0.1s",transform:(hover||note)>=n?"scale(1.2)":"scale(1)",filter:(hover||note)>=n?"none":"grayscale(1) opacity(0.4)"}}>
+            ⭐
+          </button>
+        ))}
+      </div>
+      {note>0&&(
+        <div style={{animation:"fadeIn 0.2s ease"}}>
+          <p style={{fontSize:12,color:"#8892B0",textAlign:"center",marginBottom:10}}>
+            {["","😞 Décevant","😐 Passable","🙂 Bien","😊 Très bien","🤩 Excellent !"][note]}
+          </p>
+          <textarea
+            value={commentaire}
+            onChange={e=>setCommentaire(e.target.value)}
+            placeholder="Un commentaire ? (optionnel)"
+            rows={2}
+            style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",resize:"none",marginBottom:10}}
+          />
+          <button onClick={soumettre} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+            Envoyer mon avis ✓
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ESPACE CLIENT ────────────────────────────────────────
 function ClientSpace({ commandes,setCommandes,friperie,rewards }){
   const [tab,setTab]=useState("suivi");
-  const [rech,setRech]=useState("");
+  // Pré-remplir depuis URL ?ticket=XXX (scan QR code)
+  const urlTicket = new URLSearchParams(window.location.search).get("ticket")||"";
+  const [rech,setRech]=useState(urlTicket);
   const [res,setRes]=useState(null);
   const [resAll,setResAll]=useState(null);
   const [notFound,setNotFound]=useState(false);
@@ -1117,6 +1208,15 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
   const [adresse,setAdresse]=useState("");
   const [tel,setTel]=useState("");
   const [sent,setSent]=useState(false);
+
+  // Auto-chercher si ticket dans URL
+  useEffect(()=>{
+    if(urlTicket&&commandes.length>0){
+      const exact=commandes.find(c=>c.id.toLowerCase()===urlTicket.toLowerCase());
+      if(exact){setRes(exact);setResAll(null);setNotFound(false);}
+      else setNotFound(true);
+    }
+  },[urlTicket,commandes.length]);
 
   function chercher(){
     const terme=rech.trim().toLowerCase();
@@ -1213,6 +1313,7 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
                   <button onClick={()=>setShowLiv(!showLiv)} style={{width:"100%",background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:12,padding:"12px",color:"#A855F7",fontWeight:700,fontSize:14,cursor:"pointer"}}>🛵 Demander la livraison</button>
                 </div>
               )}
+              {res.statut==="Récupéré"&&<EvaluationBlock commande={res} setCommandes={setCommandes} />}
               {sent&&<div style={{marginTop:10,background:"#0D2A3D",borderRadius:10,padding:"12px",border:`1px solid ${CYAN}40`,textAlign:"center"}}><p style={{color:CYAN,fontWeight:700}}>✅ Demande envoyée !</p></div>}
               {showLiv&&(
                 <div style={{marginTop:12,background:DARK,borderRadius:14,padding:16,border:"1px solid rgba(168,85,247,0.3)"}}>
