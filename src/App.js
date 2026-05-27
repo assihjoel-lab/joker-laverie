@@ -1931,7 +1931,7 @@ function ClientsDB({ commandes }) {
 }
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
-function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,onLogout }){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
   const [tab,setTab]=useState("home");
   const [payCmd,setPayCmd]=useState(null);
   const [cmdSearch,setCmdSearch]=useState("");
@@ -2359,6 +2359,7 @@ export default function App(){
             livreurs={livreurs}     setLivreurs={setLivreurs}
             gerantPin={gerantPin}   setGerantPin={setGerantPin}
             adminPw={adminPw}       setAdminPw={setAdminPw}
+            paiementConfig={paiementConfig} savePaiementConfig={savePaiementConfig}
             onLogout={handleLogout}
           />
         )}
