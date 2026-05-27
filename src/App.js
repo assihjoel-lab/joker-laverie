@@ -370,11 +370,13 @@ function QRCode({ value, size=120 }){
   );
 }
 
-function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,hasTel }){
+function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel }){
   const [edit,setEdit]=useState(false);
   const [nvP,setNvP]=useState(String(c.poids));
   const [confirmRefus,setConfirmRefus]=useState(false);
   const [confirmDel,setConfirmDel]=useState(false);
+  const [editFrais,setEditFrais]=useState(false);
+  const [nvFrais,setNvFrais]=useState(String(c.livraisonFrais||LIVRAISON_TARIF));
   const nextLabel={"En cours":"✅ Prêt","Prêt":"📦 Rendu"};
   return (
     <div style={{background:CARD,borderRadius:20,padding:16,marginBottom:12,border:`1px solid ${c.poidsStatut==="estimated"?"rgba(255,184,0,0.25)":BDR}`}}>
@@ -428,13 +430,27 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         </div>
       )}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-        <span style={{color:CYAN,fontWeight:700,fontSize:15,flex:1}}>{fmt(c.total)} F {c.paiementConfirme?"✅":""}</span>
+        <div style={{flex:1}}>
+          <span style={{color:CYAN,fontWeight:700,fontSize:15}}>{fmt(c.total)} F {c.paiementConfirme?"✅":""}</span>
+          {c.livraison&&<span style={{fontSize:11,color:"#A855F7",marginLeft:6}}>🛵 {fmt(c.livraisonFrais||LIVRAISON_TARIF)}F</span>}
+        </div>
+        {c.livraison&&c.statut!=="Récupéré"&&(
+          <button onClick={()=>setEditFrais(!editFrais)} style={{background:"#A855F720",border:"1px solid #A855F740",borderRadius:10,color:"#A855F7",padding:"7px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✏️ Frais liv.</button>
+        )}
         {c.statut!=="Récupéré"&&<button onClick={onPay} style={{background:c.paiementConfirme?"#0D3B2E":`linear-gradient(135deg,#004d20,${BLU})`,border:`1px solid ${c.paiementConfirme?CYAN+"40":"rgba(0,166,81,0.3)"}`,borderRadius:10,color:c.paiementConfirme?CYAN:"#fff",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{c.paiementConfirme?"✅ Payé":"💳 Payer"}</button>}
         {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>💬 WA</button>}
         <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
       </div>
+      {editFrais&&(
+        <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:12,color:"#A855F7",flexShrink:0}}>🛵 Frais :</span>
+          <input type="number" value={nvFrais} onChange={e=>setNvFrais(e.target.value)} style={{flex:1,background:CARD,border:"1px solid #A855F760",borderRadius:10,padding:"8px 12px",color:"#A855F7",fontSize:14,fontWeight:700,outline:"none",textAlign:"center"}} />
+          <button onClick={()=>{onEditFrais(c.id,parseInt(nvFrais)||0);setEditFrais(false);}} style={{background:"#A855F7",border:"none",borderRadius:10,padding:"8px 14px",color:"#fff",fontWeight:700,cursor:"pointer"}}>✅</button>
+          <button onClick={()=>setEditFrais(false)} style={{background:CARD,border:`1px solid ${BDR}`,borderRadius:10,padding:"8px 10px",color:"#8892B0",cursor:"pointer"}}>✕</button>
+        </div>
+      )}
 
       {/* Note client */}
       {c.note&&(
@@ -2050,6 +2066,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
     }));
   }
   function confirmPoids(id,newP){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const t=calcTotal(newP,c.tarif,c.livraison);return{...c,poids:newP,total:t,points:Math.floor(t/100),poidsStatut:"confirmed"};}));}
+  function editFraisLiv(id,frais){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const sousTotal=Math.round(parseFloat(c.poids)*c.tarif);const total=sousTotal+frais;return{...c,livraisonFrais:frais,total,points:Math.floor(total/100)};}));}
   function validerLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));}
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
@@ -2161,7 +2178,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
             });
             if(liste.length===0) return <p style={{color:"#8892B0",textAlign:"center",marginTop:20}}>Aucune commande trouvée.</p>;
             return liste.map(c=>(
-              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} hasTel={!!c.tel} />
+              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} />
             ));
           })()}
         </div>
