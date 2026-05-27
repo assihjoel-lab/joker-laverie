@@ -317,8 +317,22 @@ ${c.livraison?`<div class="row"><span>Livraison 🛵</span><span>+${fmt(frais)} 
 <hr class="sep"/>
 <div class="center footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>
 </body></html>`;
+    // Méthode 1: Nouvelle fenêtre pour impression
     const w = window.open("","_blank","width=420,height=650");
-    if(w){ w.document.write(html); w.document.close(); w.onload=()=>{w.focus();w.print();}; }
+    if(w){
+      w.document.write(html);
+      w.document.close();
+      w.onload=()=>{w.focus();w.print();};
+    } else {
+      // Méthode 2: Téléchargement direct si popup bloqué
+      const blob = new Blob([html], {type:"text/html;charset=utf-8"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ticket-${c.id}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
   }
 
   return (
