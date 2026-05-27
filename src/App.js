@@ -1504,8 +1504,7 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
                 })}
               </div>
               {resAll.map(c=>(
-                <div key={c.id} data-cmd-filter={c.statut}>
-                <div key={c.id} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${statutColor[c.statut]||BLU2}40`,cursor:"pointer"}} onClick={()=>{setRes(c);setResAll(null);}}>
+                <div key={c.id} data-cmd-filter={c.statut} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${statutColor[c.statut]||BLU2}40`,cursor:"pointer"}} onClick={()=>{setRes(c);setResAll(null);}}>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                     <span style={{fontWeight:700,color:BLU2,fontSize:13}}>{c.id}</span>
                     <Badge statut={c.statut} />
@@ -1518,7 +1517,6 @@ function ClientSpace({ commandes,setCommandes,friperie,rewards }){
                     <span style={{fontSize:11,color:c.paiementConfirme?"#4ADE80":"#FFB800"}}>{c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span>
                     <span style={{fontSize:11,color:"#8892B0"}}>Tap pour détails →</span>
                   </div>
-                </div>
               ))}
             </div>
           )}
