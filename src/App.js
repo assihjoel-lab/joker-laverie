@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 import { useFireCollection, useFireDoc } from "./hooks";
@@ -1934,10 +1934,10 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,friperie,setFriperie
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
   const [livNotif,setLivNotif]=useState([]);
-  const prevPendingRef = React.useRef([]);
+  const prevPendingRef = useRef([]);
 
   // Détection nouvelles demandes de livraison
-  React.useEffect(()=>{
+  useEffect(()=>{
     const pending=commandes.filter(c=>c.livraison&&c.livraisonStatut==="pending");
     const prev=prevPendingRef.current;
     const nouvelles=pending.filter(c=>!prev.find(p=>p.id===c.id));
