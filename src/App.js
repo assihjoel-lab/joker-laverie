@@ -1516,7 +1516,7 @@ function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clie
 
 
 // ─── ESPACE CLIENT ────────────────────────────────────────
-function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,friperie,rewards }){
+function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,friperie,rewards,tarifs }){
   const [tab,setTab]=useState("suivi");
   // Pré-remplir depuis URL ?ticket=XXX (scan QR code)
   const urlTicket = new URLSearchParams(window.location.search).get("ticket")||"";
@@ -2630,7 +2630,7 @@ export default function App(){
                 <span style={{fontSize:12,fontWeight:700,color:CYAN}}>CLIENT</span>
               </div>
             </div>
-            <ClientSpace commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} friperie={friperie} rewards={rewards} />
+            <ClientSpace commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} friperie={friperie} rewards={rewards} tarifs={tarifs} />
           </div>
         )}
       </div>
