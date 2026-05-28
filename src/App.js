@@ -1369,13 +1369,20 @@ function EvaluationBlock({ commande, setCommandes }){
 
 
 // ─── RAMASSAGE À DOMICILE ─────────────────────────────────
-function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clients }){
-  const [show, setShow] = useState(false);
-  const [nom,  setNom]  = useState("");
-  const [tel,  setTel]  = useState("");
-  const [adr,  setAdr]  = useState("");
-  const [sent, setSent] = useState(false);
-  const [loading, setLoading] = useState(false);
+function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clients, tarifs }){
+  const [show,    setShow]   = useState(false);
+  const [nom,     setNom]    = useState("");
+  const [tel,     setTel]    = useState("");
+  const [adr,     setAdr]    = useState("");
+  const [sent,    setSent]   = useState(false);
+  const [loading, setLoading]= useState(false);
+  const [tarifId, setTarifId]= useState(1);
+  const [poids,   setPoids]  = useState("");
+
+  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
+  const tarifSel = tarifsDisp.find(t=>t.id===tarifId)||tarifsDisp[0];
+  const sousTotal = poids&&tarifSel ? Math.round(parseFloat(poids)*tarifSel.prix) : 0;
+  const totalEst = sousTotal + 500; // +500 frais ramassage
 
   function envoyerGeo(){
     if(!navigator.geolocation){alert("Géolocalisation non disponible");return;}
@@ -1385,64 +1392,52 @@ function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clie
         const lat=pos.coords.latitude.toFixed(6);
         const lng=pos.coords.longitude.toFixed(6);
         const acc=Math.round(pos.coords.accuracy);
-        const link=`https://maps.google.com/?q=${lat},${lng}`;
-        setAdr(`${link} (±${acc}m)`);
+        setAdr(`https://maps.google.com/?q=${lat},${lng} (±${acc}m)`);
         setLoading(false);
       },
-      (err)=>{setLoading(false);alert("Position indisponible. Activez le GPS et réessayez.");},
-      {enableHighAccuracy:true, timeout:15000, maximumAge:0}
+      ()=>{setLoading(false);alert("Position indisponible. Entrez votre adresse manuellement.");},
+      {enableHighAccuracy:true,timeout:15000,maximumAge:0}
     );
   }
 
   function envoyer(){
     if(!nom||!tel||!adr)return;
-    // Créer une demande de livraison dans Firebase
-    const demandeId = "RAM-"+String(Math.floor(Math.random()*9000)+1000);
-    const demande = {
-      id: demandeId,
-      client: nom.trim(),
-      tel: tel.trim(),
-      adresse: adr.trim(),
-      poids: 0,
-      total: 0,
-      points: 0,
-      statut: "En cours",
-      date: todayStr(),
-      paiement: "especes",
-      livraison: "depot",
-      livraisonStatut: "pending",
-      livreurNom: null,
-      livreurTel: null,
-      paiementConfirme: false,
-      poidsStatut: "estimated",
-      tarifId: "lavage",
-      tarif: 0,
-      typeRamassage: true,
+    const demandeId="RAM-"+String(Math.floor(Math.random()*9000)+1000);
+    const existingCli=(clients||[]).find(cl=>cl.tel===tel.trim()||cl.nom?.toLowerCase()===nom.trim().toLowerCase());
+    const codeClient=existingCli?.codeClient||("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
+    const demande={
+      id:demandeId, client:nom.trim(), tel:tel.trim(), adresse:adr.trim(),
+      poids:parseFloat(poids)||0, tarifId:tarifSel.id, tarif:tarifSel.prix,
+      total:sousTotal, points:Math.floor(sousTotal/100),
+      statut:"En cours", date:todayStr(), paiement:"especes",
+      livraison:"depot", livraisonStatut:"pending",
+      livreurNom:null, livreurTel:null, paiementConfirme:false, codeClient,
+      fraisLiv:500, poidsStatut:"estimated",
     };
-    // Sauver commande dans Firebase
     if(upsertCmd) upsertCmd(demande);
     setCommandes(p=>[demande,...p]);
-    // Enregistrer/MAJ client dans base
-    if(upsertClient){
-      const existing=(clients||[]).find(cl=>cl.tel===tel.trim()||cl.nom?.toLowerCase()===nom.trim().toLowerCase());
-      const entry={id:demandeId,date:todayStr(),total:0,poids:0,statut:"En cours",service:"Ramassage",adresse:adr.trim()};
-      if(existing){
-        upsertClient({...existing,tel:tel.trim(),adresse:adr.trim(),commandes:[entry,...(existing.commandes||[])],historique:[entry,...(existing.historique||[])]});
+    // Auto-enregistrement client
+    if(upsertClient&&nom.trim()){
+      const cmdEntry={id:demande.id,date:demande.date,total:demande.total,poids:demande.poids,statut:demande.statut,service:tarifSel.label};
+      if(existingCli){
+        upsertClient({...existingCli,codeClient,historique:[cmdEntry,...(existingCli.historique||[])],totalDepense:(existingCli.totalDepense||0)+demande.total});
       } else {
-        upsertClient({id:"cli_"+demandeId,nom:nom.trim(),tel:tel.trim(),email:"",adresse:adr.trim(),notes:"",points:0,dateCreation:todayStr(),commandes:[entry],historique:[entry],totalDepense:0});
+        upsertClient({id:"cli_"+demandeId,nom:nom.trim(),tel:tel.trim(),adresse:adr,notes:"Demande ramassage",points:demande.points,totalDepense:demande.total,historique:[cmdEntry],codeClient});
       }
     }
-    // Notifier par WhatsApp aussi
-    const msg=`🧺 *DEMANDE DE RAMASSAGE*%0A%0A👤 Nom : ${nom}%0A📞 Tél : ${tel}%0A📍 Adresse : ${adr}%0A🎫 Réf : ${demandeId}%0A%0AUn client souhaite qu'on vienne chercher son linge !`;
-    sendWhatsApp(JOKER_FLOOZ.replace(/\D/g,""), msg);
+    // WhatsApp gérant
+    const msg=`🧺 *DEMANDE RAMASSAGE*%0A%0A🎫 ${demandeId}%0A👤 ${nom.trim()}%0A📞 ${tel.trim()}%0A📍 ${adr}%0A%0A👕 Service : ${tarifSel.label}%0A⚖️ Poids estimé : ${poids||"?"}kg%0A💰 Montant estimé : ${fmt(totalEst)} FCFA%0A%0A🔑 Code client : ${codeClient}`;
+    sendWhatsApp("22879621085", msg);
+    // WhatsApp client avec son code
+    if(tel.trim()) sendWhatsApp(tel.trim(), `🃏 *JOKER Laverie & Service*%0A%0A✅ Demande de ramassage enregistrée !%0A%0A🎫 N° : ${demandeId}%0A🔑 Votre code client : *${codeClient}*%0A%0AConservez ce code pour suivre vos commandes dans notre appli.%0A%0A📱 joker-laverie.vercel.app`);
     setSent(true); setShow(false);
-    setNom(""); setTel(""); setAdr("");
+    setNom(""); setTel(""); setAdr(""); setPoids("");
   }
 
   if(sent) return (
     <div style={{background:"#0D2A1A",borderRadius:16,padding:16,marginBottom:14,border:"1px solid #25D36640",textAlign:"center"}}>
-      <p style={{fontSize:22,marginBottom:6}}>✅</p>
-      <p style={{color:"#25D366",fontWeight:700}}>Demande envoyée !</p>
+      <p style={{fontSize:28,marginBottom:6}}>✅</p>
+      <p style={{color:"#25D366",fontWeight:700,fontSize:15}}>Demande envoyée !</p>
       <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>Nous vous contacterons très bientôt.</p>
       <button onClick={()=>setSent(false)} style={{marginTop:10,background:"none",border:"none",color:"#4A7BF7",fontSize:12,cursor:"pointer"}}>Faire une autre demande</button>
     </div>
@@ -1462,11 +1457,48 @@ function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clie
       {show&&(
         <div style={{background:"#060D1F",border:"1px solid #25D36640",borderRadius:"0 0 16px 16px",padding:16,borderTop:"none"}}>
           <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Votre nom *"
-            style={{width:"100%",background:"#0D1F6E22",border:"1px solid #1A3EBD44",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
           <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone *" type="tel"
-            style={{width:"100%",background:"#0D1F6E22",border:"1px solid #1A3EBD44",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+
+          {/* Choix du service */}
+          <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Service souhaité</p>
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+            {tarifsDisp.map(t=>(
+              <button key={t.id} onClick={()=>setTarifId(t.id)} style={{background:tarifId===t.id?`${BLU}40`:DARK,border:`1px solid ${tarifId===t.id?BLU2:BDR}`,borderRadius:12,padding:"10px 14px",color:tarifId===t.id?BLU2:"#8892B0",fontWeight:tarifId===t.id?700:400,fontSize:13,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span>{t.label}</span>
+                <span style={{color:CYAN,fontWeight:700}}>{fmt(t.prix)} F/kg</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Poids estimé */}
+          <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Poids estimé (kg)</p>
+          <input value={poids} onChange={e=>setPoids(e.target.value)} placeholder="ex: 3.5" type="number" step="0.5"
+            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+
+          {/* Montant estimé */}
+          {sousTotal>0&&(
+            <div style={{background:`${BLU}20`,borderRadius:14,padding:"12px 16px",marginBottom:12,border:`1px solid ${BLU2}40`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{color:"#8892B0",fontSize:13}}>Lavage ({poids}kg × {fmt(tarifSel.prix)} F)</span>
+                <span style={{color:"#F8FAFF",fontWeight:700,fontSize:13}}>{fmt(sousTotal)} F</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{color:"#8892B0",fontSize:13}}>Frais ramassage</span>
+                <span style={{color:"#A855F7",fontWeight:700,fontSize:13}}>+500 F</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${BDR}`,paddingTop:8,marginTop:4}}>
+                <span style={{color:"#F8FAFF",fontWeight:700}}>TOTAL ESTIMÉ</span>
+                <span style={{color:CYAN,fontWeight:700,fontSize:18}}>{fmt(totalEst)} F</span>
+              </div>
+              <p style={{color:"#8892B0",fontSize:10,marginTop:4}}>*Le poids sera confirmé à l'arrivée</p>
+            </div>
+          )}
+
+          {/* Adresse / GPS */}
           <input value={adr} onChange={e=>setAdr(e.target.value)} placeholder="Votre adresse / quartier *"
-            style={{width:"100%",background:"#0D1F6E22",border:"1px solid #1A3EBD44",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:8}} />
+            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:8}} />
           <button onClick={envoyerGeo} disabled={loading} style={{width:"100%",background:"#0D2A1A",border:"1px solid #25D36640",borderRadius:12,padding:"10px",color:"#25D366",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
             {loading?"📍 Localisation...":"📍 Utiliser ma position GPS"}
           </button>
@@ -1481,6 +1513,7 @@ function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clie
     </div>
   );
 }
+
 
 // ─── ESPACE CLIENT ────────────────────────────────────────
 function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,friperie,rewards }){
@@ -1558,7 +1591,7 @@ function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,fri
         <div style={{padding:"16px 20px 0"}}>
 
           {/* Bouton ramassage à domicile */}
-          <RamassageBlock commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} />
+          <RamassageBlock commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} tarifs={tarifs} />
 
           <div style={{display:"flex",gap:10,marginBottom:14}}>
             <input value={rech} onChange={e=>setRech(e.target.value)} onKeyDown={e=>e.key==="Enter"&&chercher()} placeholder="N° ticket ou nom…" style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:15,outline:"none"}} />
