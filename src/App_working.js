@@ -1,4 +1,3 @@
-/* eslint-disable */
 import { useState, useEffect, useRef } from "react";
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
@@ -170,30 +169,34 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const total=sousTotal+frais;
   const pts=Math.floor(total/100);
 
+  function genCodeClient(nom, tel){
+    const base=(nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
+    return "CLI-"+base;
+  }
+
   function creer(){
     if(!nom||!poids) return;
+    const existingCli=(clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
+    const codeClient=existingCli?.codeClient||genCodeClient(nom,tel);
     const c={id:genId(),client:nom,tel,poids:parseFloat(poids),poidsStatut:isDepot?"estimated":"confirmed",
       tarifId:tarif.id,tarif:tarif.prix,total,statut:"En cours",date:todayStr(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,
-      livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false};
+      livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,codeClient};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
-    // Auto-enregistrement client + historique permanent
-    if(upsertClient && nom.trim()) {
-      const existing = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
-      const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:c.poids,statut:c.statut,service:tarif.label};
-      if(existing) {
-        upsertClient({...existing, historique:[cmdEntry,...(existing.historique||[])], totalDepense:(existing.totalDepense||0)+c.total, commandes:[cmdEntry,...(existing.commandes||[])]});
+    if(upsertClient&&nom.trim()){
+      const cmdEntry={id:c.id,date:c.date,total:c.total,poids:c.poids,statut:c.statut,service:tarif.label};
+      if(existingCli){
+        upsertClient({...existingCli,codeClient,historique:[cmdEntry,...(existingCli.historique||[])],totalDepense:(existingCli.totalDepense||0)+c.total,points:c.points});
       } else {
-        upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total});
+        upsertClient({id:"cli_"+c.id,nom:nom.trim(),tel:tel.trim()||"—",email:"",adresse:"",notes:"",points:c.points,totalDepense:c.total,historique:[cmdEntry],codeClient});
       }
     }
     setTicket(c);
   }
-
   function waTicket(c){
     if(!c.tel) return;
-    sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\n🎫 Ticket: ${c.id}\n👤 ${c.client}\n⚖️ ${c.poids}kg\n💰 ${fmt(c.total)} FCFA\n💳 ${PAIEMENTS.find(p=>p.id===c.paiement)?.label}\n🏅 +${c.points} points\n\nLomé, Togo — Merci! 🙏`);
+    sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\n🎫 Ticket: ${c.id}\n👤 ${c.client}\n⚖️ ${c.poids}kg\n💰 ${fmt(c.total)} FCFA\n\n🔑 *Votre code client : ${c.codeClient||"—"}*\nConservez ce code pour accéder à votre espace client !\n\nMerci de votre confiance 🙏`);
   }
 
   if(ticketPrint) return <TicketModal c={ticketPrint} tarifs={tarifs} onClose={()=>setTicketPrint(null)} />;
@@ -205,7 +208,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         {ticket.poidsStatut==="estimated"&&<div style={{background:"#1A0D00",borderRadius:12,padding:10,marginTop:8,border:"1px solid #FFB80040"}}><p style={{color:"#FFB800",fontSize:13,fontWeight:600}}>⚖️ Poids estimé — à confirmer à la laverie</p></div>}
       </div>
       <div style={{background:CARD,borderRadius:18,padding:20,border:`1px solid ${BDR}`,marginBottom:16}}>
-        {[["N°",ticket.id],["Client",ticket.client],["Téléphone",ticket.tel||"—"],["Poids",ticket.poids+"kg"],["Service",tarif.label],["Sous-total",fmt(sousTotal)+" FCFA"],livraison?["Livraison 🛵",fmt(LIVRAISON_TARIF)+" FCFA"]:null,["TOTAL",fmt(total)+" FCFA"],["Paiement",PAIEMENTS.find(p=>p.id===ticket.paiement)?.label],["+Points","+"+pts+" 🏅"]].filter(Boolean).map(([k,v])=>(
+        {[["N°",ticket.id],["Code client",ticket.codeClient||"—"],["Client",ticket.client],["Téléphone",ticket.tel||"—"],["Poids",ticket.poids+"kg"],["Service",tarif.label],["Sous-total",fmt(sousTotal)+" FCFA"],livraison?["Livraison 🛵",fmt(LIVRAISON_TARIF)+" FCFA"]:null,["TOTAL",fmt(total)+" FCFA"],["Paiement",PAIEMENTS.find(p=>p.id===ticket.paiement)?.label],["+Points","+"+pts+" 🏅"]].filter(Boolean).map(([k,v])=>(
           <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
@@ -784,6 +787,8 @@ function Caisse({ commandes,tarifs }){
     ? commandes.filter(c=>monthDates.includes(c.date))
     : commandes;
   const ca=filtered.reduce((s,c)=>s+c.total,0);
+  const caPayee=filtered.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
+  const caEnAttente=ca-caPayee;
   const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id).length}));
   const maxPmt=Math.max(...byPmt.map(p=>p.total),1);
 
@@ -803,7 +808,11 @@ function Caisse({ commandes,tarifs }){
       <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:22,padding:22,marginBottom:14,border:"1px solid rgba(0,194,255,0.3)",textAlign:"center"}}>
         <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{period==="today"?"CA du jour":"CA total"}</p>
         <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:44,color:CYAN,letterSpacing:2,lineHeight:1}}>{fmt(ca)} FCFA</p>
-        <p style={{color:BLU2,fontSize:12,marginTop:6}}>{filtered.length} commande(s)</p>
+        <div style={{display:"flex",gap:16,justifyContent:"center",marginTop:6,marginBottom:4}}>
+          <span style={{fontSize:12,color:"#4ADE80",fontWeight:700}}>✅ {fmt(caPayee)} encaissés</span>
+          <span style={{fontSize:12,color:"#FFB800",fontWeight:700}}>⏳ {fmt(caEnAttente)} en attente</span>
+        </div>
+        <p style={{color:BLU2,fontSize:12}}>{filtered.length} commande(s)</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {(()=>{
@@ -1508,10 +1517,15 @@ function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,fri
 
   function chercher(){
     const terme=rech.trim().toLowerCase();
-    // Chercher par N° exact d'abord
+    // 1. Chercher par code client (espace personnel)
+    if(terme.startsWith("cli-")){
+      const all=commandes.filter(c=>c.codeClient&&c.codeClient.toLowerCase()===terme);
+      if(all.length>0){setResAll(all.slice().reverse());setRes(null);setNotFound(false);setShowLiv(false);setSent(false);return;}
+    }
+    // 2. Chercher par N° ticket exact
     const exact=commandes.find(c=>c.id.toLowerCase()===terme);
     if(exact){setRes(exact);setResAll(null);setNotFound(false);setShowLiv(false);setSent(false);return;}
-    // Sinon chercher toutes les commandes du client par nom ou tél
+    // 3. Chercher par nom ou téléphone
     const all=commandes.filter(c=>c.client.toLowerCase().includes(terme)||(c.tel&&c.tel.includes(rech.trim())));
     if(all.length>0){setResAll(all.slice().reverse());setRes(null);setNotFound(false);}
     else{setResAll(null);setRes(null);setNotFound(true);}
@@ -2080,7 +2094,15 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
   }
   function confirmPoids(id,newP){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const t=calcTotal(newP,c.tarif,c.livraison);return{...c,poids:newP,total:t,points:Math.floor(t/100),poidsStatut:"confirmed"};}));}
   function editFraisLiv(id,frais){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const sousTotal=Math.round(parseFloat(c.poids)*c.tarif);const total=sousTotal+frais;return{...c,livraisonFrais:frais,total,points:Math.floor(total/100)};}));}
-  function validerLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));}
+  function validerLiv(id){
+    const cmd = commandes.find(c=>c.id===id);
+    setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));
+    // Notifier le client que le livreur est en route
+    if(cmd&&cmd.tel){
+      const livreurInfo = cmd.livreurNom ? `\n🛵 Livreur : *${cmd.livreurNom}*${cmd.livreurTel?`\n📞 ${cmd.livreurTel}`:""}` : "";
+      sendWhatsApp(cmd.tel, `🃏 *JOKER Laverie & Service*\n\n🛵 Votre livreur est *EN ROUTE* !\n\n🎫 Commande : ${cmd.id}\n👤 ${cmd.client}${livreurInfo}\n\nPréparez votre linge, il arrive bientôt ! 📦`);
+    }
+  //}
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){
@@ -2164,6 +2186,37 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
             <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,letterSpacing:3}}>JOKER LAVERIE & SERVICE</h1>
             <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</p>
           </div>
+          {/* Barre stats du jour */}
+          {(()=>{
+            const today=todayStr();
+            const cmdJour=commandes.filter(c=>c.date===today);
+            const caJour=cmdJour.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
+            const prets=commandes.filter(c=>c.statut==="Prêt").length;
+            const livPending=commandes.filter(c=>c.livraison&&c.livraisonStatut==="pending").length;
+            return (
+              <div style={{background:"#0D2A1A",borderRadius:14,padding:"12px 16px",marginBottom:14,border:"1px solid #4ADE8030"}}>
+                <p style={{fontSize:11,color:"#4ADE80",fontWeight:700,letterSpacing:1,marginBottom:8}}>📅 AUJOURD&apos;HUI — {today}</p>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <div style={{textAlign:"center"}}>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#4ADE80"}}>{fmt(caJour)} F</p>
+                    <p style={{fontSize:10,color:"#8892B0"}}>Encaissé</p>
+                  </div>
+                  <div style={{textAlign:"center"}}>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:CYAN}}>{cmdJour.length}</p>
+                    <p style={{fontSize:10,color:"#8892B0"}}>Commandes</p>
+                  </div>
+                  <div style={{textAlign:"center"}}>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#FFB800"}}>{prets}</p>
+                    <p style={{fontSize:10,color:"#8892B0"}}>Prêtes</p>
+                  </div>
+                  <div style={{textAlign:"center"}}>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#A855F7"}}>{livPending}</p>
+                    <p style={{fontSize:10,color:"#8892B0"}}>Livraisons</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
             {[{l:"CA total",v:fmt(ca)+" F",i:"💰",c:CYAN},{l:"Commandes",v:commandes.length,i:"🧺",c:BLU2},{l:"Livreurs actifs",v:livreurs.filter(l=>l.actif).length,i:"🛵",c:"#A855F7"},{l:"Alertes",v:alerts,i:"🔔",c:"#FFB800"}].map(s=>(
               <div key={s.l} style={{background:`linear-gradient(135deg,#0D1F6E22,#1A3EBD11)`,borderRadius:18,padding:16,border:`1px solid ${s.c}30`}}>
@@ -2284,7 +2337,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
           </div>
           {/* Horaires */}
           <div style={{background:CARD,borderRadius:16,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
-            <p style={{fontWeight:700,color:BLU2,fontSize:13,marginBottom:10,letterSpacing:1}}>🕐 HORAIRES D&apos;OUVERTURE</p>
+            <p style={{fontWeight:700,color:BLU2,fontSize:13,marginBottom:10,letterSpacing:1}}>🕐 HORAIRES D'OUVERTURE</p>
             {[["Lundi – Samedi","7h00 – 20h00"],["Dimanche","8h00 – 14h00"],["Jours fériés","8h00 – 13h00"]].map(([j,h])=>(
               <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${BDR}`}}>
                 <span style={{fontSize:13,color:"#8892B0"}}>{j}</span>
@@ -2552,7 +2605,7 @@ export default function App(){
             </div>
             {/* Horaires */}
             <div style={{marginTop:28,background:CARD,borderRadius:16,padding:"14px 20px",border:`1px solid ${BDR}`,textAlign:"left"}}>
-              <p style={{fontWeight:700,fontSize:12,color:BLU2,marginBottom:8,letterSpacing:1}}>🕐 HORAIRES D&apos;OUVERTURE</p>
+              <p style={{fontWeight:700,fontSize:12,color:BLU2,marginBottom:8,letterSpacing:1}}>🕐 HORAIRES D'OUVERTURE</p>
               {[["Lun – Sam","7h00 – 20h00"],["Dimanche","8h00 – 14h00"]].map(([j,h])=>(
                 <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${BDR}`}}>
                   <span style={{fontSize:12,color:"#8892B0"}}>{j}</span>
