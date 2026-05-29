@@ -2055,7 +2055,7 @@ function ClientsDB({ commandes }) {
 }
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
-function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
@@ -2125,20 +2125,10 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){
-    // Garder dans historique client avant suppression
-    const cmdToDelete = commandes.find(c=>c.id===id);
-    if(cmdToDelete){
-      const cli=clients.find(cl=>(cl.commandes||[]).find(h=>h.id===id));
-      if(cli&&upsertClient){
-        upsertClient({...cli,
-          commandes:(cli.commandes||[]).map(h=>h.id===id?{...h,statut:"Supprimée",supprime:true}:h),
-          historique:(cli.historique||[]).map(h=>h.id===id?{...h,statut:"Supprimée",supprime:true}:h)
-        });
-      }
-    }
-    // Supprimer directement dans Firebase SEULEMENT (pas via setCommandes)
+    // Suppression directe dans Firebase
     removeCmd(String(id));
-    // onSnapshot va mettre à jour la liste automatiquement
+    // Mise à jour locale
+    setCommandes(p=>p.filter(c=>c.id!==id));
   }
   const [ticketModal,setTicketModal]=useState(null);
   function confirmerPaiement(id,mode){setCommandes(p=>p.map(c=>c.id===id?{...c,paiement:mode,paiementConfirme:true}:c));setPayCmd(null);}
@@ -2661,8 +2651,8 @@ export default function App(){
 
         {screen==="gerant"&&gerantAuth&&(
           <GerantDashboard
-            commandes={commandes}   setCommandes={setCommandes}   upsertCmd={upsertCmd}
-            clients={clients}       setClients={setClients}
+            commandes={commandes}   setCommandes={setCommandes}   upsertCmd={upsertCmd}   removeCmd={removeCmd}
+            clients={clients}       setClients={setClients}       upsertClient={upsertClient}
             friperie={friperie}     setFriperie={setFriperie}
             tarifs={tarifs}         setTarifs={setTarifs}
             rewards={rewards}       setRewards={setRewards}
