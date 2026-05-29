@@ -804,8 +804,7 @@ function Caisse({ commandes,tarifs }){
         c.paiementConfirme?"Oui":"Non", c.points||0
       ])
     ];
-    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("
-");
+    const csv = rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");
     const bom = "﻿";
     const blob = new Blob([bom+csv],{type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
