@@ -838,6 +838,32 @@ function Caisse({ commandes,tarifs }){
           </div>
         </div>
       ))}
+      <STitle text="En attente de paiement" />
+      {(()=>{
+        const enAttente=commandes.filter(c=>!c.paiementConfirme&&c.statut!=="En cours");
+        if(enAttente.length===0) return <p style={{color:"#8892B0",fontSize:13,marginBottom:14,textAlign:"center"}}>✅ Tous les paiements sont à jour</p>;
+        const totalDu=enAttente.reduce((s,c)=>s+(c.total||0),0);
+        return (
+          <div style={{marginBottom:14}}>
+            <div style={{background:"#3B2E0D",borderRadius:14,padding:"12px 16px",marginBottom:10,border:"1px solid #FFB80040",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{color:"#FFB800",fontWeight:700,fontSize:13}}>⏳ Total en attente</span>
+              <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#FFB800"}}>{fmt(totalDu)} F</span>
+            </div>
+            {enAttente.map(c=>(
+              <div key={c.id} style={{background:CARD,borderRadius:14,padding:"12px 16px",marginBottom:8,border:"1px solid #FFB80030"}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontWeight:700,fontSize:14,color:"#F8FAFF"}}>{c.client}</span>
+                  <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:"#FFB800"}}>{fmt(c.total)} F</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span style={{fontSize:11,color:"#8892B0"}}>{c.id} · {c.date} · {c.statut}</span>
+                  {c.tel&&<button onClick={()=>sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\nBonjour ${c.client} !\nVotre commande ${c.id} de *${fmt(c.total)} FCFA* est en attente de paiement.\n\nMerci 🙏`)} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:8,padding:"4px 8px",color:"#25D366",fontSize:11,fontWeight:700,cursor:"pointer"}}>💬 Rappel WA</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       <STitle text="Recettes par jour" />
       {dates.map(date=>{
         const cmds=byDate[date];
@@ -2055,7 +2081,7 @@ function ClientsDB({ commandes }) {
 }
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,onLogout }){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
@@ -2277,6 +2303,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
           {[
+            {id:"statut",     icon:"🔴", label:"Statut de la laverie",    sub:"Marquer ouvert ou fermé"},
             {id:"avisgerant", icon:"⭐", label:"Avis & Évaluations",      sub:"Notes et commentaires clients"},
             {id:"apropos",   icon:"ℹ️",  label:"À propos de JOKER",      sub:"Horaires, adresse, services"},
             {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
@@ -2314,6 +2341,36 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       )}
       {tab==="factures"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><HistoriqueFactures commandes={commandes} tarifs={tarifs} /></div>
+      )}
+      {tab==="statut"&&(
+        <div style={{padding:"20px",animation:"fadeIn 0.4s ease"}}>
+          <button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:14,marginBottom:20}}>← Retour</button>
+          <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:6}}>Statut de la laverie</h2>
+          <p style={{color:"#8892B0",fontSize:13,marginBottom:24}}>Ce statut est visible par vos clients sur la page d&apos;accueil.</p>
+          {/* Statut actuel */}
+          <div style={{background:statutLaverie?.ouvert?"#0D3B2E":"#3B0D0D",borderRadius:18,padding:24,marginBottom:20,border:`1px solid ${statutLaverie?.ouvert?"#4ADE8040":"#FF444440"}`,textAlign:"center"}}>
+            <p style={{fontSize:48,marginBottom:8}}>{statutLaverie?.ouvert?"🟢":"🔴"}</p>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:28,color:statutLaverie?.ouvert?"#4ADE80":"#FF6B6B",letterSpacing:2}}>{statutLaverie?.ouvert?"OUVERT":"FERMÉ"}</p>
+            {statutLaverie?.message&&<p style={{color:"#8892B0",fontSize:13,marginTop:8,fontStyle:"italic"}}>"{statutLaverie.message}"</p>}
+          </div>
+          {/* Boutons */}
+          <div style={{display:"flex",gap:12,marginBottom:20}}>
+            <button onClick={()=>saveStatutLaverie({ouvert:true,message:""})} style={{flex:1,background:statutLaverie?.ouvert?"linear-gradient(135deg,#0D6E3B,#4ADE80)":"#0D2A1A",border:"1px solid #4ADE8040",borderRadius:16,padding:"16px",color:statutLaverie?.ouvert?"#fff":"#4ADE80",fontWeight:700,fontSize:16,cursor:"pointer"}}>🟢 Marquer ouvert</button>
+            <button onClick={()=>saveStatutLaverie({ouvert:false,message:statutLaverie?.message||"Nous sommes actuellement fermés."})} style={{flex:1,background:!statutLaverie?.ouvert?"linear-gradient(135deg,#6E0D0D,#FF6B6B)":"#2A0D0D",border:"1px solid #FF444440",borderRadius:16,padding:"16px",color:!statutLaverie?.ouvert?"#fff":"#FF6B6B",fontWeight:700,fontSize:16,cursor:"pointer"}}>🔴 Marquer fermé</button>
+          </div>
+          {/* Message personnalisé */}
+          {!statutLaverie?.ouvert&&(
+            <div>
+              <p style={{fontSize:12,color:"#8892B0",marginBottom:8}}>Message à afficher aux clients :</p>
+              <textarea
+                defaultValue={statutLaverie?.message||"Nous sommes actuellement fermés. Revenez bientôt !"}
+                onBlur={e=>saveStatutLaverie({...statutLaverie,message:e.target.value})}
+                style={{width:"100%",background:CARD,border:"1px solid #FF444440",borderRadius:12,padding:"12px",color:"#F8FAFF",fontSize:14,outline:"none",resize:"none",minHeight:80}}
+              />
+              <p style={{fontSize:11,color:"#8892B0",marginTop:4}}>Ce message sera affiché à vos clients.</p>
+            </div>
+          )}
+        </div>
       )}
       {tab==="avisgerant"&&(
         <div style={{padding:"20px",animation:"fadeIn 0.4s ease"}}>
@@ -2362,7 +2419,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
           {/* Horaires */}
           <div style={{background:CARD,borderRadius:16,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
             <p style={{fontWeight:700,color:BLU2,fontSize:13,marginBottom:10,letterSpacing:1}}>🕐 HORAIRES D&apos;OUVERTURE</p>
-            {[["Lundi – Samedi","7h00 – 20h00"],["Dimanche","8h00 – 14h00"],["Jours fériés","8h00 – 13h00"]].map(([j,h])=>(
+            {[["Lundi – Samedi","7h00 – 20h00"],["Dimanche","13h00 – 20h00"],["Jours fériés","9h00 – 14h00"]].map(([j,h])=>(
               <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${BDR}`}}>
                 <span style={{fontSize:13,color:"#8892B0"}}>{j}</span>
                 <span style={{fontSize:13,fontWeight:700,color:"#F8FAFF"}}>{h}</span>
@@ -2389,7 +2446,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
             </div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"7px 0"}}>
               <span style={{fontSize:13,color:"#8892B0"}}>📍 Adresse</span>
-              <span style={{fontWeight:700,color:"#F8FAFF",textAlign:"right",maxWidth:"60%"}}>Lomé, Togo</span>
+              <span style={{fontWeight:700,color:"#F8FAFF",textAlign:"right",maxWidth:"60%"}}>Agoe Cacaveli, 2ème von après Batir</span>
             </div>
           </div>
           <p style={{textAlign:"center",color:"#8892B0",fontSize:11,marginTop:8}}>Version 1.0 · JOKER Laverie & Service</p>
@@ -2518,6 +2575,7 @@ export default function App(){
 
   // ── Firestore docs (config) ────────────────────────────
   const [tarifs,    saveTarifs,    tarifReady]  = useFireDoc("config","tarifs",    TARIFS_INIT);
+  const [statutLaverie, saveStatutLaverie] = useFireDoc("config","statut", {ouvert:true, message:""});
   const [paiementConfig, savePaiementConfig, paiReady] = useFireDoc("config","paiements", {flooz:JOKER_FLOOZ_DEFAULT, tmoney:JOKER_TMONEY_DEFAULT, livraisonFrais:LIVRAISON_TARIF_DEFAULT});
   const [rewards,   saveRewards,   rewardReady] = useFireDoc("config","rewards",   REWARDS_INIT);
   const [gerantPin, savePin,       pinReady]    = useFireDoc("config","pin",       "1234");
@@ -2626,17 +2684,23 @@ export default function App(){
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <button onClick={()=>setScreen("gerant-pin")} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:20,padding:"20px",color:"#fff",fontWeight:700,fontSize:17,cursor:"pointer",boxShadow:"0 8px 32px rgba(26,62,189,0.5)"}}>👨‍💼 Espace Gérant</button>
               <button onClick={()=>setScreen("client")} style={{background:CARD,border:`1px solid ${BDR}`,borderRadius:20,padding:"20px",color:"#F8FAFF",fontWeight:700,fontSize:17,cursor:"pointer"}}>👤 Espace Client</button>
+              {statutLaverie&&!statutLaverie.ouvert&&(
+                <div style={{background:"#3B0D0D",borderRadius:16,padding:"14px 16px",border:"1px solid #FF444440",marginTop:4}}>
+                  <p style={{color:"#FF6B6B",fontWeight:700,fontSize:14,marginBottom:4}}>🔴 Laverie actuellement fermée</p>
+                  <p style={{color:"#8892B0",fontSize:12}}>{statutLaverie.message||"Revenez bientôt !"}</p>
+                </div>
+              )}
             </div>
             {/* Horaires */}
             <div style={{marginTop:28,background:CARD,borderRadius:16,padding:"14px 20px",border:`1px solid ${BDR}`,textAlign:"left"}}>
               <p style={{fontWeight:700,fontSize:12,color:BLU2,marginBottom:8,letterSpacing:1}}>🕐 HORAIRES D&apos;OUVERTURE</p>
-              {[["Lun – Sam","7h00 – 20h00"],["Dimanche","8h00 – 14h00"]].map(([j,h])=>(
+              {[["Lun – Sam","7h00 – 20h00"],["Dimanche","13h00 – 20h00"]].map(([j,h])=>(
                 <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${BDR}`}}>
                   <span style={{fontSize:12,color:"#8892B0"}}>{j}</span>
                   <span style={{fontSize:12,fontWeight:700,color:"#F8FAFF"}}>{h}</span>
                 </div>
               ))}
-              <p style={{fontSize:11,color:"#8892B0",marginTop:8,textAlign:"center"}}>📍 Lomé, Togo</p>
+              <p style={{fontSize:11,color:"#8892B0",marginTop:8,textAlign:"center"}}>📍 Agoe Cacaveli, 2ème von après Batir, Lomé</p>
             </div>
             <p style={{color:`${BLU2}50`,fontSize:11,marginTop:16}}>Flooz · T-Money · Espèces · 🛵 Livraison</p>
           </div>
@@ -2660,6 +2724,7 @@ export default function App(){
             gerantPin={gerantPin}   setGerantPin={setGerantPin}
             adminPw={adminPw}       setAdminPw={setAdminPw}
             paiementConfig={paiementConfig} savePaiementConfig={savePaiementConfig}
+            statutLaverie={statutLaverie} saveStatutLaverie={saveStatutLaverie}
             onLogout={handleLogout}
           />
         )}
