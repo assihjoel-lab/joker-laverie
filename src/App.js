@@ -794,9 +794,68 @@ function Caisse({ commandes,tarifs }){
   commandes.forEach(c=>{if(!byDate[c.date])byDate[c.date]=[];byDate[c.date].push(c);});
   const dates=Object.keys(byDate).reverse();
 
+  function exportCSV(){
+    const rows = [
+      ["N° Ticket","Client","Téléphone","Date","Service","Poids (kg)","Total (FCFA)","Paiement","Statut","Payé","Points"],
+      ...filtered.map(c=>[
+        c.id, c.client, c.tel||"—", c.date,
+        tarifs.find(t=>t.id===c.tarifId)?.label||"—",
+        c.poids, c.total, c.paiement, c.statut,
+        c.paiementConfirme?"Oui":"Non", c.points||0
+      ])
+    ];
+    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(",")).join("
+");
+    const bom = "﻿";
+    const blob = new Blob([bom+csv],{type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href=url; a.download=`joker-caisse-${period}-${todayStr()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportHTML(){
+    const periode = period==="today"?"Aujourd'hui":period==="week"?"7 derniers jours":period==="month"?"30 derniers jours":"Total";
+    const rows = filtered.map(c=>`
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:8px 6px;font-weight:700;color:#1A3EBD">${c.id}</td>
+        <td style="padding:8px 6px">${c.client}</td>
+        <td style="padding:8px 6px">${c.tel||"—"}</td>
+        <td style="padding:8px 6px">${c.date}</td>
+        <td style="padding:8px 6px">${tarifs.find(t=>t.id===c.tarifId)?.label||"—"}</td>
+        <td style="padding:8px 6px;text-align:center">${c.poids} kg</td>
+        <td style="padding:8px 6px;text-align:right;font-weight:700;color:#1A3EBD">${c.total.toLocaleString("fr-FR")} F</td>
+        <td style="padding:8px 6px;text-align:center">${c.paiement}</td>
+        <td style="padding:8px 6px;text-align:center">${c.paiementConfirme?"✅":"⏳"}</td>
+      </tr>`).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Rapport JOKER Laverie</title>
+    <style>body{font-family:Arial,sans-serif;padding:20px;color:#111;}h1{color:#1A3EBD;}table{width:100%;border-collapse:collapse;}th{background:#1A3EBD;color:#fff;padding:10px 6px;text-align:left;}tr:nth-child(even){background:#f5f7ff;}.total{font-size:18px;font-weight:700;color:#1A3EBD;margin-top:16px;}@media print{button{display:none}}</style>
+    </head><body>
+    <h1>🃏 JOKER Laverie & Service</h1>
+    <p>Période : <strong>${periode}</strong> · Exporté le ${new Date().toLocaleDateString("fr-FR")}</p>
+    <p class="total">CA encaissé : ${ca.toLocaleString("fr-FR")} FCFA · ${filtered.filter(c=>c.paiementConfirme).length}/${filtered.length} commandes</p>
+    <table><thead><tr><th>N° Ticket</th><th>Client</th><th>Téléphone</th><th>Date</th><th>Service</th><th>Poids</th><th>Total</th><th>Paiement</th><th>Payé</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <p class="total">Total général : ${filtered.reduce((s,c)=>s+c.total,0).toLocaleString("fr-FR")} FCFA</p>
+    <button onclick="window.print()" style="margin-top:20px;background:#1A3EBD;color:#fff;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:16px;">🖨️ Imprimer / Sauvegarder en PDF</button>
+    </body></html>`;
+    const blob = new Blob([html],{type:"text/html;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const w = window.open("","_blank");
+    if(w){w.document.write(html);w.document.close();}
+    else{const a=document.createElement("a");a.href=url;a.download=`rapport-joker-${period}-${todayStr()}.html`;a.click();}
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
-      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Caisse & Recettes</h2>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Caisse & Recettes</h2>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={exportCSV} title="Exporter Excel" style={{background:"#0D3B1A",border:"1px solid #4ADE8040",borderRadius:10,padding:"7px 10px",color:"#4ADE80",fontWeight:700,fontSize:12,cursor:"pointer"}}>📊 Excel</button>
+          <button onClick={exportHTML} title="Exporter PDF" style={{background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:10,padding:"7px 10px",color:"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📄 PDF</button>
+        </div>
+      </div>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[{id:"today",l:"Auj."},{id:"week",l:"7 jours"},{id:"month",l:"30 jours"},{id:"all",l:"Total"}].map(p=>(
           <button key={p.id} onClick={()=>setPeriod(p.id)} style={{flex:1,background:period===p.id?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${period===p.id?BLU2:BDR}`,borderRadius:12,padding:"10px",color:period===p.id?"#fff":"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>{p.l}</button>
