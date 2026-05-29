@@ -2125,10 +2125,20 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
   function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){
-    // Suppression directe dans Firebase
+    // Garder dans historique client avant suppression
+    const cmdToDelete = commandes.find(c=>c.id===id);
+    if(cmdToDelete){
+      const cli=clients.find(cl=>(cl.commandes||[]).find(h=>h.id===id));
+      if(cli&&upsertClient){
+        upsertClient({...cli,
+          commandes:(cli.commandes||[]).map(h=>h.id===id?{...h,statut:"Supprimée",supprime:true}:h),
+          historique:(cli.historique||[]).map(h=>h.id===id?{...h,statut:"Supprimée",supprime:true}:h)
+        });
+      }
+    }
+    // Supprimer directement dans Firebase SEULEMENT (pas via setCommandes)
     removeCmd(String(id));
-    // Mise à jour locale
-    setCommandes(p=>p.filter(c=>c.id!==id));
+    // onSnapshot va mettre à jour la liste automatiquement
   }
   const [ticketModal,setTicketModal]=useState(null);
   function confirmerPaiement(id,mode){setCommandes(p=>p.map(c=>c.id===id?{...c,paiement:mode,paiementConfirme:true}:c));setPayCmd(null);}
