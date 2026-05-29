@@ -783,8 +783,10 @@ function Caisse({ commandes,tarifs }){
     : period==="month"
     ? commandes.filter(c=>monthDates.includes(c.date))
     : commandes;
-  const ca=filtered.reduce((s,c)=>s+c.total,0);
-  const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id).length}));
+  const caTotal=filtered.reduce((s,c)=>s+c.total,0);
+  const ca=filtered.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
+  const caEnAttente=caTotal-ca;
+  const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).length}));
   const maxPmt=Math.max(...byPmt.map(p=>p.total),1);
 
   // Grouper par date pour l'historique
@@ -801,9 +803,13 @@ function Caisse({ commandes,tarifs }){
         ))}
       </div>
       <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:22,padding:22,marginBottom:14,border:"1px solid rgba(0,194,255,0.3)",textAlign:"center"}}>
-        <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{period==="today"?"CA du jour":"CA total"}</p>
+        <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{period==="today"?"CA du jour":period==="week"?"CA 7 jours":period==="month"?"CA 30 jours":"CA total"}</p>
         <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:44,color:CYAN,letterSpacing:2,lineHeight:1}}>{fmt(ca)} FCFA</p>
-        <p style={{color:BLU2,fontSize:12,marginTop:6}}>{filtered.length} commande(s)</p>
+        <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:4,marginBottom:4}}>
+          <span style={{fontSize:11,color:"#4ADE80",fontWeight:700}}>✅ {fmt(ca)} encaissés</span>
+          <span style={{fontSize:11,color:"#FFB800",fontWeight:700}}>⏳ {fmt(caEnAttente)} en attente</span>
+        </div>
+        <p style={{color:BLU2,fontSize:12}}>{filtered.filter(c=>c.paiementConfirme).length}/{filtered.length} commande(s) payées</p>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {(()=>{
@@ -835,7 +841,7 @@ function Caisse({ commandes,tarifs }){
       <STitle text="Recettes par jour" />
       {dates.map(date=>{
         const cmds=byDate[date];
-        const dayCa=cmds.reduce((s,c)=>s+c.total,0);
+        const dayCa=cmds.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
         const maxCa=Math.max(...dates.map(d=>byDate[d].reduce((s,c)=>s+c.total,0)),1);
         return (
           <div key={date} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${BDR}`}}>
@@ -1307,7 +1313,7 @@ function ClientFidelite({ commandes, rewards }){
 }
 
 // ─── ÉVALUATION CLIENT ────────────────────────────────────
-function EvaluationBlock({ commande, setCommandes }){
+function EvaluationBlock({ commande, setCommandes, upsertCmd }){
   const [note, setNote] = useState(commande.note||0);
   const [hover, setHover] = useState(0);
   const [commentaire, setCommentaire] = useState(commande.commentaire||"");
@@ -1315,7 +1321,9 @@ function EvaluationBlock({ commande, setCommandes }){
 
   function soumettre(){
     if(!note) return;
-    setCommandes(p=>p.map(c=>c.id===commande.id?{...c,note,commentaire}:c));
+    const updated = {...commande, note, commentaire};
+    setCommandes(p=>p.map(c=>c.id===commande.id?updated:c));
+    if(upsertCmd) upsertCmd(updated);
     setSubmitted(true);
   }
 
@@ -1662,7 +1670,7 @@ function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,fri
                   <button onClick={()=>setShowLiv(!showLiv)} style={{width:"100%",background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:12,padding:"12px",color:"#A855F7",fontWeight:700,fontSize:14,cursor:"pointer"}}>🛵 Demander la livraison</button>
                 </div>
               )}
-              {res.statut==="Récupéré"&&<EvaluationBlock commande={res} setCommandes={setCommandes} />}
+              {res.statut==="Récupéré"&&<EvaluationBlock commande={res} setCommandes={setCommandes} upsertCmd={upsertCmd} />}
               {sent&&<div style={{marginTop:10,background:"#0D2A3D",borderRadius:10,padding:"12px",border:`1px solid ${CYAN}40`,textAlign:"center"}}><p style={{color:CYAN,fontWeight:700}}>✅ Demande envoyée !</p></div>}
               {showLiv&&(
                 <div style={{marginTop:12,background:DARK,borderRadius:14,padding:16,border:"1px solid rgba(168,85,247,0.3)"}}>
@@ -2269,6 +2277,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
           {[
+            {id:"avisgerant", icon:"⭐", label:"Avis & Évaluations",      sub:"Notes et commentaires clients"},
             {id:"apropos",   icon:"ℹ️",  label:"À propos de JOKER",      sub:"Horaires, adresse, services"},
             {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
             {id:"paiements", icon:"💳", label:"Mobile Money",          sub:"Modifier numéros Flooz/T-Money"},
@@ -2305,6 +2314,41 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,upsertClient,friperi
       )}
       {tab==="factures"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><HistoriqueFactures commandes={commandes} tarifs={tarifs} /></div>
+      )}
+      {tab==="avisgerant"&&(
+        <div style={{padding:"20px",animation:"fadeIn 0.4s ease"}}>
+          <button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:14,marginBottom:16}}>← Retour</button>
+          <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:4}}>Avis Clients ⭐</h2>
+          {(()=>{
+            const avecNote=commandes.filter(c=>c.note);
+            const avg=avecNote.length?Math.round(avecNote.reduce((s,c)=>s+c.note,0)/avecNote.length*10)/10:0;
+            return (
+              <>
+                <div style={{background:CARD,borderRadius:16,padding:16,marginBottom:16,border:`1px solid ${BDR}`,textAlign:"center"}}>
+                  <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:48,color:"#FFD700"}}>{avg||"—"}</p>
+                  <p style={{fontSize:20,marginBottom:4}}>{"⭐".repeat(Math.round(avg))}</p>
+                  <p style={{color:"#8892B0",fontSize:13}}>{avecNote.length} avis reçus</p>
+                </div>
+                {avecNote.length===0&&<p style={{color:"#8892B0",textAlign:"center",padding:20}}>Aucun avis pour le moment</p>}
+                {avecNote.slice().reverse().map(c=>(
+                  <div key={c.id} style={{background:CARD,borderRadius:16,padding:16,marginBottom:10,border:`1px solid ${BDR}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                      <div>
+                        <p style={{fontWeight:700,fontSize:14}}>{c.client}</p>
+                        <p style={{fontSize:11,color:"#8892B0"}}>{c.id} · {c.date}</p>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <p style={{fontSize:18}}>{"⭐".repeat(c.note)}</p>
+                        <p style={{fontSize:11,color:"#FFD700",fontWeight:700}}>{c.note}/5</p>
+                      </div>
+                    </div>
+                    {c.commentaire&&<p style={{fontSize:13,color:"#8892B0",fontStyle:"italic",borderTop:`1px solid ${BDR}`,paddingTop:8}}>"{c.commentaire}"</p>}
+                  </div>
+                ))}
+              </>
+            );
+          })()}
+        </div>
       )}
       {tab==="apropos"&&(
         <div style={{padding:"20px",animation:"fadeIn 0.4s ease"}}>
