@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -11,17 +11,13 @@ const firebaseConfig = {
   appId:             "1:253945256775:web:b22519e3286ad9d3808a62",
 };
 
-const app  = initializeApp(firebaseConfig);
-export const db   = getFirestore(app);
-export const auth = getAuth(app);
+const app = initializeApp(firebaseConfig);
 
-// Activer le mode hors-ligne (cache local IndexedDB)
-enableIndexedDbPersistence(db).catch((err) => {
-  if (err.code === "failed-precondition") {
-    // Plusieurs onglets ouverts en même temps
-    console.warn("Hors-ligne désactivé : plusieurs onglets ouverts");
-  } else if (err.code === "unimplemented") {
-    // Navigateur ne supporte pas IndexedDB
-    console.warn("Hors-ligne non supporté par ce navigateur");
-  }
+// Mode hors-ligne avec la nouvelle API (Firebase 10+)
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
 });
+
+export const auth = getAuth(app);
