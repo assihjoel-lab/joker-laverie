@@ -55,10 +55,10 @@ const LIVREURS_INIT = [];
 const COMMANDES_INIT = [];
 
 const LEVEL_SEUILS = [
-  { label:"Bronze",   min:0,   max:99,       color:"#CD7F32" },
-  { label:"Silver",   min:100, max:299,      color:"#C0C0C0" },
-  { label:"Gold",     min:300, max:599,      color:"#FFD700" },
-  { label:"Platinum", min:600, max:Infinity, color:"#E0E0FF" },
+  { label:"Bronze",   min:0,   max:99,       color:"#CD7F32", remise:0  },
+  { label:"Silver",   min:100, max:299,      color:"#C0C0C0", remise:5  },
+  { label:"Gold",     min:300, max:599,      color:"#FFD700", remise:10 },
+  { label:"Platinum", min:600, max:Infinity, color:"#E0E0FF", remise:15 },
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────
@@ -163,18 +163,20 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [ticket,setTicket]=useState(null);
   const [ticketPrint,setTicketPrint]=useState(null);
   const [fraisLiv,setFraisLiv]=useState(LIVRAISON_TARIF_DEFAULT);
+  const [remisePct,setRemisePct]=useState(0);
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
   const sousTotal=poids?Math.round(parseFloat(poids)*tarif.prix):0;
   const frais=livraison?fraisLiv:0;
-  const total=sousTotal+frais;
+  const remiseMontant=Math.round((sousTotal+frais)*remisePct/100);
+  const total=sousTotal+frais-remiseMontant;
   const pts=Math.floor(total/100);
 
   function creer(){
     if(!nom||!poids) return;
     const c={id:genId(),client:nom,tel,poids:parseFloat(poids),poidsStatut:isDepot?"estimated":"confirmed",
       tarifId:tarif.id,tarif:tarif.prix,total,statut:"En cours",date:todayStr(),
-      points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,
+      points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,remise:remisePct,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
@@ -247,6 +249,20 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         </div>
         {livraison&&<input value={adresse} onChange={e=>setAdresse(e.target.value)} placeholder="Adresse à Lomé" style={{width:"100%",marginTop:10,background:CARD,border:"1px solid rgba(168,85,247,0.3)",borderRadius:12,padding:"12px 14px",color:"#F8FAFF",fontSize:14,outline:"none"}} />}
         {livraison&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}><span style={{color:"#8892B0",fontSize:12}}>Frais livraison :</span><input type="number" value={fraisLiv} onChange={e=>setFraisLiv(parseInt(e.target.value)||0)} style={{width:100,background:DARK,border:"1px solid #1A3EBD44",borderRadius:10,padding:"7px 10px",color:"#00C2FF",fontWeight:700,fontSize:14,outline:"none",textAlign:"center"}} /><span style={{color:"#8892B0",fontSize:12}}>FCFA</span></div>}
+        {/* Réduction manuelle ou fidélité */}
+        <div style={{background:CARD,borderRadius:14,padding:"12px 16px",marginBottom:10,border:"1px solid #4ADE8030"}}>
+          <p style={{fontSize:11,color:"#4ADE80",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>🎁 Réduction</p>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            {[0,5,10,15,20].map(p=>(
+              <button key={p} onClick={()=>setRemisePct(p)} style={{background:remisePct===p?"linear-gradient(135deg,#4ADE80,#22C55E)":DARK,border:`1px solid ${remisePct===p?"#4ADE80":BDR}`,borderRadius:10,padding:"7px 12px",color:remisePct===p?"#000":"#8892B0",fontWeight:remisePct===p?700:400,fontSize:12,cursor:"pointer"}}>{p===0?"Aucune":`${p}%`}</button>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{color:"#8892B0",fontSize:12}}>Ou saisir :</span>
+            <input type="number" min="0" max="100" value={remisePct} onChange={e=>setRemisePct(Math.min(100,parseInt(e.target.value)||0))} style={{width:70,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"7px",color:"#4ADE80",fontWeight:700,fontSize:14,outline:"none",textAlign:"center"}} />
+            <span style={{color:"#8892B0",fontSize:12}}>%</span>
+          </div>
+        </div>
       </div>
       <div style={{marginBottom:14}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Paiement</label>
@@ -262,6 +278,12 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       {poids&&(
         <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:18,padding:18,marginBottom:16,border:`1px solid ${isDepot?"rgba(255,184,0,0.3)":"rgba(0,194,255,0.3)"}`}}>
           {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>Lavage</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(LIVRAISON_TARIF)} FCFA</span></div></>}
+          {remiseMontant>0&&(
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+              <span style={{color:"#4ADE80",fontSize:13}}>🎁 Réduction ({remisePct}%)</span>
+              <span style={{color:"#4ADE80",fontWeight:700,fontSize:13}}>-{fmt(remiseMontant)} FCFA</span>
+            </div>
+          )}
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{color:"#8892B0",fontSize:14}}>TOTAL</span>
             <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:28,color:isDepot?"#FFB800":CYAN}}>{fmt(total)} FCFA</span>
@@ -652,6 +674,79 @@ function GestionTarifs({ tarifs,setTarifs }){
 }
 
 // ─── LIVREURS ─────────────────────────────────────────────
+
+// ─── GESTION PROMOTIONS ────────────────────────────────────
+function GestionPromos({ promos, setPromos }){
+  const [form,setForm]=useState({label:"",remise:10,cible:"tous",dateDebut:"",dateFin:"",actif:true});
+  const [show,setShow]=useState(false);
+  const [msg,setMsg]=useState("");
+  function flash(m){setMsg(m);setTimeout(()=>setMsg(""),2500);}
+
+  function ajouter(){
+    if(!form.label||!form.remise) return;
+    setPromos(p=>[...p,{...form,id:Date.now(),remise:parseInt(form.remise)}]);
+    setForm({label:"",remise:10,cible:"tous",dateDebut:"",dateFin:"",actif:true});
+    setShow(false); flash("OK Promotion ajoutee !");
+  }
+
+  const aujourd = todayStr();
+  const actives = (promos||[]).filter(p=>p.actif&&(!p.dateDebut||p.dateDebut<=aujourd)&&(!p.dateFin||p.dateFin>=aujourd));
+
+  return (
+    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Promotions</h2>
+        <button onClick={()=>setShow(!show)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontWeight:700,cursor:"pointer"}}>+ Creer</button>
+      </div>
+      {msg&&<div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 16px",marginBottom:14}}><p style={{color:CYAN,fontWeight:700,fontSize:13}}>{msg}</p></div>}
+      <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+        <p style={{fontWeight:700,fontSize:14,marginBottom:10,color:BLU2}}>Reductions automatiques fidelite</p>
+        {LEVEL_SEUILS.map(l=>(
+          <div key={l.label} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${BDR}`}}>
+            <span style={{color:l.color,fontWeight:700,fontSize:13}}>{l.label}</span>
+            <span style={{color:"#4ADE80",fontWeight:700}}>{l.remise===0?"Aucune":`${l.remise}% de reduction`}</span>
+          </div>
+        ))}
+      </div>
+      {show&&(
+        <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:"1px solid #4ADE8030"}}>
+          <p style={{fontWeight:700,fontSize:15,color:"#4ADE80",marginBottom:12}}>Nouvelle promotion saisonniere</p>
+          <input value={form.label} onChange={e=>setForm(p=>({...p,label:e.target.value}))} placeholder="Nom (ex: Promo Noel, Rentree...)"
+            style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+          <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
+            <span style={{color:"#8892B0",fontSize:13}}>Reduction :</span>
+            <input type="number" min="1" max="100" value={form.remise} onChange={e=>setForm(p=>({...p,remise:e.target.value}))}
+              style={{width:80,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"8px",color:"#4ADE80",fontWeight:700,fontSize:16,outline:"none",textAlign:"center"}} />
+            <span style={{color:"#8892B0",fontSize:13}}>%</span>
+          </div>
+          <p style={{fontSize:12,color:"#8892B0",marginBottom:6}}>Periode (optionnel)</p>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            <input type="date" value={form.dateDebut} onChange={e=>setForm(p=>({...p,dateDebut:e.target.value}))}
+              style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"8px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
+            <input type="date" value={form.dateFin} onChange={e=>setForm(p=>({...p,dateFin:e.target.value}))}
+              style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"8px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
+          </div>
+          <Btn label="Ajouter la promotion" onClick={ajouter} disabled={!form.label||!form.remise} />
+        </div>
+      )}
+      {actives.length>0&&(
+        <div style={{marginBottom:14}}>
+          <p style={{color:"#4ADE80",fontWeight:700,fontSize:13,marginBottom:8}}>{actives.length} promotion(s) active(s)</p>
+          {actives.map(p=>(
+            <div key={p.id} style={{background:"#0D2A1A",borderRadius:14,padding:"12px 16px",marginBottom:8,border:"1px solid #4ADE8030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <p style={{fontWeight:700,color:"#F8FAFF"}}>{p.label}</p>
+                <p style={{fontSize:12,color:"#4ADE80"}}>-{p.remise}% {p.dateDebut&&p.dateFin?`${p.dateDebut} au ${p.dateFin}`:""}</p>
+              </div>
+              <button onClick={()=>setPromos(pr=>pr.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#FF4444",cursor:"pointer",fontSize:18}}>X</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
   const [newNom,setNewNom]=useState("");
   const [newTel,setNewTel]=useState("");
@@ -2151,6 +2246,27 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       setNotifPop(pendingLivs);
     }
   },[JSON.stringify(pendingLivs.map(c=>c.id))]);
+
+  // Rappel automatique linge non récupéré depuis 3 jours
+  useEffect(()=>{
+    const today = new Date();
+    commandes.forEach(c=>{
+      if(c.statut==="Prêt"&&c.tel&&c.date){
+        const parts = c.date.split(" ");
+        // Parse date like "29 mai" or "2026-05-29"
+        const cmdDate = new Date(c.date.includes("-") ? c.date : Date.now());
+        const diffDays = Math.floor((today - cmdDate)/(1000*60*60*24));
+        if(diffDays===3){
+          // Check if reminder already sent (avoid duplicate)
+          const key = "rappel_"+c.id;
+          if(!localStorage.getItem(key)){
+            sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*%0A%0ABonjour ${c.client} !%0A%0A⚠️ Votre linge (${c.id}) est *prêt depuis 3 jours* et attend d'être récupéré.%0A%0APassez nous voir dès que possible.%0AMerci ! 🙏`);
+            localStorage.setItem(key,"sent");
+          }
+        }
+      }
+    });
+  },[commandes.length]);
   const [payCmd,setPayCmd]=useState(null);
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
@@ -2365,6 +2481,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
             {id:"avisgerant", icon:"⭐", label:"Avis & Évaluations",      sub:"Notes et commentaires clients"},
             {id:"apropos",   icon:"ℹ️",  label:"À propos de JOKER",      sub:"Horaires, adresse, services"},
             {id:"clients",   icon:"👥", label:"Base clients",           sub:"Historique et fiche par client"},
+            {id:"promos",    icon:"🎁", label:"Promotions & Réductions", sub:"Gérer les offres et remises"},
             {id:"paiements", icon:"💳", label:"Mobile Money",          sub:"Modifier numéros Flooz/T-Money"},
             {id:"tarifs",    icon:"💲", label:"Gérer les tarifs",      sub:"Modifier les prix et services"},
             {id:"fidelite",  icon:"🏅", label:"Programme fidélité",    sub:"Gérer les points clients"},
