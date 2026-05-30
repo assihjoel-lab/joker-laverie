@@ -1601,8 +1601,12 @@ function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clie
       livreurNom:null, livreurTel:null, paiementConfirme:false, codeClient,
       fraisLiv:500, poidsStatut:"estimated",
     };
-    if(upsertCmd) upsertCmd(demande);
-    setCommandes(p=>[demande,...p]);
+    // Sauvegarder directement dans Firebase
+    if(upsertCmd){
+      upsertCmd(demande);
+    } else {
+      setCommandes(p=>[demande,...p]);
+    }
     // Auto-enregistrement client
     if(upsertClient&&nom.trim()){
       const cmdEntry={id:demande.id,date:demande.date,total:demande.total,poids:demande.poids,statut:demande.statut,service:tarifSel.label};
