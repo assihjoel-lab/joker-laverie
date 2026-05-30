@@ -754,11 +754,7 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
   function flash(m){setMsg(m);setTimeout(()=>setMsg(""),2000);}
   function addLivreur(){if(!newNom)return;setLivreurs(p=>[...p,{id:"L"+Date.now(),nom:newNom,tel:newTel,actif:true,courses:0}]);setNewNom("");setNewTel("");flash("✅ Livreur ajouté !");}
   function assigner(cmdId,l){
-    const cmd = commandes.find(c=>c.id===cmdId);
-    if(!cmd) return;
-    const updated = {...cmd, livreurNom:l.nom, livreurTel:l.tel, livraisonStatut:"confirmed"};
-    // Mise à jour directe dans Firebase
-    setCommandes(p=>p.map(c=>c.id===cmdId?updated:c));
+    setCommandes(p=>p.map(c=>c.id===cmdId?{...c,livreurNom:l.nom,livreurTel:l.tel,livraisonStatut:"confirmed"}:c));
     setLivreurs(p=>p.map(x=>x.id===l.id?{...x,courses:x.courses+1}:x));
     const cmd=commandes.find(c=>c.id===cmdId);
     if(cmd&&l.tel) sendWhatsApp(l.tel,`🛵 *JOKER — Nouvelle course*\n\n👤 ${cmd.client}\n📍 ${cmd.adresse||"À confirmer"}\n📞 ${cmd.tel||"—"}\n🎫 ${cmd.id}\n💰 ${fmt(cmd.total)} FCFA\n\nBonne route ! 🃏`);
@@ -814,6 +810,17 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
                 <div><p style={{fontWeight:700,fontSize:14}}>{c.client}</p><p style={{fontSize:12,color:"#8892B0"}}>{c.id}</p>{c.adresse&&<p style={{fontSize:12,color:BLU2,marginTop:2}}>📍 {c.adresse}</p>}</div>
                 <span style={{background:"#0D1F6E",color:CYAN,borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700}}>En route</span>
               </div>
+              {!c.livreurNom&&actifs.length>0&&(
+                <div style={{marginBottom:8}}>
+                  <p style={{fontSize:11,color:"#A855F7",marginBottom:6}}>Assigner un livreur :</p>
+                  {actifs.map(l=>(
+                    <button key={l.id} onClick={()=>assigner(c.id,l)} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <span style={{color:"#fff",fontWeight:700}}>{l.nom}</span>
+                      <span style={{color:"#fff",fontWeight:700}}>Assigner</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div style={{background:"#0A0F1E",borderRadius:12,padding:"10px 14px",border:`1px solid ${BDR}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:20}}>🛵</span>
