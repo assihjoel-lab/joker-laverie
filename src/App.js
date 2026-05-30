@@ -869,9 +869,16 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
 }
 
 // ─── CAISSE ───────────────────────────────────────────────
-function Caisse({ commandes,tarifs }){
+function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour }){
   const [period,setPeriod]=useState("today");
+  const [showDepenses,setShowDepenses]=useState(false);
+  const [showObjectif,setShowObjectif]=useState(false);
+  const [nvObjectif,setNvObjectif]=useState(String(objectifJour));
+  const [nvDepLib,setNvDepLib]=useState("");
+  const [nvDepMont,setNvDepMont]=useState("");
+  const [nvDepCat,setNvDepCat]=useState("Fournitures");
   const today=todayStr();
+  const CATS_DEP=["Fournitures","Eau/Électricité","Salaire","Loyer","Transport","Autre"];
 
   function getWeekDates(){
     const days=[]; const now=new Date();
@@ -980,11 +987,107 @@ function Caisse({ commandes,tarifs }){
         </div>
         <p style={{color:BLU2,fontSize:12}}>{filtered.filter(c=>c.paiementConfirme).length}/{filtered.length} commande(s) payées</p>
       </div>
+
+      {/* ── OBJECTIF JOURNALIER ── */}
+      {(()=>{
+        const depJour=depenses.filter(d=>d.date===today).reduce((s,d)=>s+(d.montant||0),0);
+        const caJour=commandes.filter(c=>c.date===today&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+        const benefJour=caJour-depJour;
+        const pct=Math.min(100,objectifJour>0?Math.round((caJour/objectifJour)*100):0);
+        const couleur=pct>=100?"#4ADE80":pct>=60?CYAN:"#FFB800";
+        return (
+          <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:`1px solid ${BDR}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div>
+                <p style={{fontWeight:700,fontSize:14}}>🎯 Objectif du jour</p>
+                <p style={{color:"#8892B0",fontSize:11,marginTop:2}}>Objectif : {fmt(objectifJour)} FCFA</p>
+              </div>
+              <button onClick={()=>setShowObjectif(!showObjectif)} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:10,padding:"6px 10px",color:"#8892B0",fontSize:11,cursor:"pointer"}}>✏️ Modifier</button>
+            </div>
+            {showObjectif&&(
+              <div style={{display:"flex",gap:8,marginBottom:10,animation:"fadeIn 0.2s ease"}}>
+                <input value={nvObjectif} onChange={e=>setNvObjectif(e.target.value)} placeholder="Ex: 50000" type="number" style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:14,outline:"none"}} />
+                <button onClick={()=>{saveObjectifJour(parseInt(nvObjectif)||50000);setShowObjectif(false);}} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontWeight:700,cursor:"pointer"}}>OK</button>
+              </div>
+            )}
+            {/* Barre de progression */}
+            <div style={{background:"#1A1A2E",borderRadius:99,height:12,marginBottom:8,overflow:"hidden"}}>
+              <div style={{height:"100%",width:pct+"%",background:`linear-gradient(90deg,${couleur},${couleur}aa)`,borderRadius:99,transition:"width 0.8s ease"}} />
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11}}>
+              <span style={{color:couleur,fontWeight:700}}>{pct}% atteint</span>
+              <span style={{color:"#8892B0"}}>{fmt(Math.max(0,objectifJour-caJour))} restants</span>
+            </div>
+            {/* Bénéfice net */}
+            <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${BDR}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <p style={{fontSize:11,color:"#8892B0"}}>Dépenses du jour</p>
+                <p style={{fontWeight:700,color:"#FF6B6B",fontSize:14}}>- {fmt(depJour)} FCFA</p>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <p style={{fontSize:11,color:"#8892B0"}}>Bénéfice net</p>
+                <p style={{fontWeight:700,color:benefJour>=0?"#4ADE80":"#FF6B6B",fontSize:18}}>{benefJour>=0?"+":""}{fmt(benefJour)} FCFA</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── DÉPENSES ── */}
+      <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:`1px solid ${BDR}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <p style={{fontWeight:700,fontSize:14}}>💸 Dépenses</p>
+          <button onClick={()=>setShowDepenses(!showDepenses)} style={{background:showDepenses?"#1A0A0A":`linear-gradient(135deg,#7B0000,#C0392B)`,border:"none",borderRadius:10,padding:"6px 12px",color:showDepenses?"#8892B0":"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>{showDepenses?"✕ Fermer":"+ Ajouter"}</button>
+        </div>
+        {showDepenses&&(
+          <div style={{background:DARK,borderRadius:14,padding:14,marginBottom:12,border:`1px solid ${BDR}`,animation:"fadeIn 0.2s ease"}}>
+            <input value={nvDepLib} onChange={e=>setNvDepLib(e.target.value)} placeholder="Libellé (ex: Lessive 5L)" style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",marginBottom:8}} />
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              <input value={nvDepMont} onChange={e=>setNvDepMont(e.target.value)} placeholder="Montant FCFA" type="number" style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
+              <select value={nvDepCat} onChange={e=>setNvDepCat(e.target.value)} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 8px",color:"#F8FAFF",fontSize:12,outline:"none"}}>
+                {CATS_DEP.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <button onClick={()=>{
+              if(!nvDepLib.trim()||!nvDepMont)return;
+              upsertDepense({id:"dep_"+Date.now(),libelle:nvDepLib.trim(),montant:parseInt(nvDepMont),categorie:nvDepCat,date:todayStr()});
+              setNvDepLib("");setNvDepMont("");setShowDepenses(false);
+            }} style={{width:"100%",background:"linear-gradient(135deg,#7B0000,#C0392B)",border:"none",borderRadius:12,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>💸 Enregistrer la dépense</button>
+          </div>
+        )}
+        {/* Liste dépenses filtrées */}
+        {(()=>{
+          const deps = depenses.filter(d=> period==="today"?d.date===today: period==="week"?getWeekDates().includes(d.date): period==="month"?getMonthDates().includes(d.date):true).sort((a,b)=>b.id.localeCompare(a.id));
+          const totalDeps = deps.reduce((s,d)=>s+(d.montant||0),0);
+          if(deps.length===0) return <p style={{color:"#8892B0",fontSize:13,textAlign:"center",padding:"8px 0"}}>Aucune dépense sur cette période</p>;
+          return <>
+            {deps.map(d=>(
+              <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BDR}`}}>
+                <div style={{flex:1}}>
+                  <p style={{fontWeight:700,fontSize:13}}>{d.libelle}</p>
+                  <p style={{fontSize:11,color:"#8892B0"}}>{d.categorie} · {d.date}</p>
+                </div>
+                <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>-{fmt(d.montant)} F</p>
+                <button onClick={()=>removeDepense(d.id)} style={{background:"none",border:"none",color:"#FF6B6B50",fontSize:16,cursor:"pointer",padding:"0 4px"}}>🗑️</button>
+              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4}}>
+              <span style={{color:"#8892B0",fontSize:13}}>Total dépenses</span>
+              <span style={{color:"#FF6B6B",fontWeight:700,fontSize:14}}>-{fmt(totalDeps)} FCFA</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:6}}>
+              <span style={{color:"#8892B0",fontSize:13}}>Bénéfice net</span>
+              <span style={{color:ca-totalDeps>=0?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:14}}>{ca-totalDeps>=0?"+":""}{fmt(ca-totalDeps)} FCFA</span>
+            </div>
+          </>;
+        })()}
+      </div>
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         {(()=>{
           const noted=filtered.filter(c=>c.note);
           const avg=noted.length?Math.round(noted.reduce((s,c)=>s+c.note,0)/noted.length*10)/10:null;
-          return [{l:"Panier moyen",v:filtered.length?fmt(Math.round(ca/filtered.length))+" F":"—",c:BLU2},{l:"Livraisons",v:filtered.filter(c=>c.livraison).length,c:"#A855F7"},{l:"Avis clients",v:noted.length?`${"⭐".repeat(Math.round(avg))} ${avg}/5`:"—",c:"#FFB800"},{l:"Avis reçus",v:noted.length,c:"#4ADE80"}];
+          return [{l:"Panier moyen",v:filtered.length?fmt(Math.round(ca/Math.max(filtered.filter(c=>c.paiementConfirme).length,1)))+" F":"—",c:BLU2},{l:"Livraisons",v:filtered.filter(c=>c.livraison).length,c:"#A855F7"},{l:"Avis clients",v:noted.length?`${"⭐".repeat(Math.round(avg))} ${avg}/5`:"—",c:"#FFB800"},{l:"Avis reçus",v:noted.length,c:"#4ADE80"}];
         })().map(k=>(
           <div key={k.l} style={{background:CARD,borderRadius:14,padding:14,border:`1px solid ${BDR}`,textAlign:"center"}}>
             <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:k.l==="Avis clients"?16:22,color:k.c}}>{k.v}</p>
@@ -2525,7 +2628,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
 
       {tab==="livraisons"&&<GestionLivreurs livreurs={livreurs} setLivreurs={setLivreurs} commandes={commandes} setCommandes={setCommandes} />}
 
-      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} />}
+      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} />}
 
       {tab==="plus"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -2801,6 +2904,7 @@ export default function App(){
   const [clients,   upsertClient,  ,           cliReady]   = useFireCollection("clients",    []);
   const [friperie,  upsertFrip,    removeFrip, fripReady]  = useFireCollection("friperie",   FRIPERIE_INIT);
   const [livreurs,  upsertLivreur, removeLivreur, livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
+  const [depenses,  upsertDepense, removeDepense]           = useFireCollection("depenses",   []);
 
   // ── Firestore docs (config) ────────────────────────────
   const [tarifs,    saveTarifs,    tarifReady]  = useFireDoc("config","tarifs",    TARIFS_INIT);
@@ -2809,6 +2913,7 @@ export default function App(){
   const [rewards,   saveRewards,   rewardReady] = useFireDoc("config","rewards",   REWARDS_INIT);
   const [gerantPin, savePin,       pinReady]    = useFireDoc("config","pin",       "1234");
   const [adminPw,   saveAdminPw,   pwReady]     = useFireDoc("config","adminpw",   "joker2026");
+  const [objectifJour, saveObjectifJour]        = useFireDoc("config","objectif",  50000);
 
   const allReady = cmdReady&&cliReady&&fripReady&&livReady&&tarifReady&&rewardReady&&pinReady&&pwReady&&paiReady;
   // Mise à jour des numéros globaux depuis Firebase
