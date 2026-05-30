@@ -754,7 +754,11 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
   function flash(m){setMsg(m);setTimeout(()=>setMsg(""),2000);}
   function addLivreur(){if(!newNom)return;setLivreurs(p=>[...p,{id:"L"+Date.now(),nom:newNom,tel:newTel,actif:true,courses:0}]);setNewNom("");setNewTel("");flash("✅ Livreur ajouté !");}
   function assigner(cmdId,l){
-    setCommandes(p=>p.map(c=>c.id===cmdId?{...c,livreurNom:l.nom,livreurTel:l.tel,livraisonStatut:"confirmed"}:c));
+    const cmd = commandes.find(c=>c.id===cmdId);
+    if(!cmd) return;
+    const updated = {...cmd, livreurNom:l.nom, livreurTel:l.tel, livraisonStatut:"confirmed"};
+    // Mise à jour directe dans Firebase
+    setCommandes(p=>p.map(c=>c.id===cmdId?updated:c));
     setLivreurs(p=>p.map(x=>x.id===l.id?{...x,courses:x.courses+1}:x));
     const cmd=commandes.find(c=>c.id===cmdId);
     if(cmd&&l.tel) sendWhatsApp(l.tel,`🛵 *JOKER — Nouvelle course*\n\n👤 ${cmd.client}\n📍 ${cmd.adresse||"À confirmer"}\n📞 ${cmd.tel||"—"}\n🎫 ${cmd.id}\n💰 ${fmt(cmd.total)} FCFA\n\nBonne route ! 🃏`);
