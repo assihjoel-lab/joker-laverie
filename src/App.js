@@ -334,10 +334,15 @@ function TicketModal({ c, tarifs, onClose }){
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",padding:"16px 12px",overflowY:"auto"}}
       onClick={e=>e.target===e.currentTarget&&onClose()}>
       {/* Boutons fixes en haut */}
-      <div style={{display:"flex",gap:10,marginBottom:14,width:"100%",maxWidth:340}}>
+      <div style={{display:"flex",gap:8,marginBottom:14,width:"100%",maxWidth:340,flexWrap:"wrap"}}>
         <button onClick={onClose} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"12px",color:"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer"}}>← Retour</button>
         <button onClick={imprimer} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>🖨️ Imprimer</button>
       </div>
+      {c.tel&&(
+        <div style={{width:"100%",maxWidth:340,marginBottom:14}}>
+          <button onClick={()=>sendWhatsApp(c.tel,buildFacture(c,tarifs))} style={{width:"100%",background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:"13px",color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture sur WhatsApp</button>
+        </div>
+      )}
 
       {/* Ticket visuel */}
       <div id="joker-ticket-print-wrapper"><div id="joker-ticket-print" style={{background:"#fff",color:"#111",borderRadius:16,padding:"20px 18px",width:"100%",maxWidth:340,boxShadow:"0 8px 40px rgba(0,0,0,0.5)"}}>
@@ -463,7 +468,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
           <button onClick={()=>setEditFrais(!editFrais)} style={{background:"#A855F720",border:"1px solid #A855F740",borderRadius:10,color:"#A855F7",padding:"7px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✏️ Frais liv.</button>
         )}
         {c.statut!=="Récupéré"&&<button onClick={onPay} style={{background:c.paiementConfirme?"#0D3B2E":`linear-gradient(135deg,#004d20,${BLU})`,border:`1px solid ${c.paiementConfirme?CYAN+"40":"rgba(0,166,81,0.3)"}`,borderRadius:10,color:c.paiementConfirme?CYAN:"#fff",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{c.paiementConfirme?"✅ Payé":"💳 Payer"}</button>}
-        {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>💬 WA</button>}
+        {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>💬 Notifier</button>}
         <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
@@ -2317,16 +2322,8 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       if(c.id!==id) return c;
       const m={"En cours":"Prêt","Prêt":"Récupéré"};
       const newStatut=m[c.statut]||c.statut;
-      // 🔔 Notification WhatsApp automatique quand le linge passe à "Prêt"
-      if(newStatut==="Prêt"&&c.tel){
-        setTimeout(()=>sendWhatsApp(c.tel,
-          `🃏 *JOKER Laverie & Service*\n\n🎉 Bonne nouvelle ${c.client} !\n\nVotre linge est *PRÊT* à récupérer 🧺\n\n🎫 Ticket : *${c.id}*\n⚖️ Poids : ${c.poids} kg\n💰 Total : ${fmt(c.total)} FCFA\n\n📍 Venez le récupérer à la laverie\nou demandez la livraison 🛵 (+${fmt(LIVRAISON_TARIF)} FCFA)\n\nMerci de votre confiance ! 🙏`
-        ),300);
-      }
       const updated={...c,statut:newStatut};
-      // ✅ Persister dans Firestore
       upsertCmd(updated);
-      // Sync statut dans historique client
       const cli=clients.find(cl=>(cl.commandes||[]).find(h=>h.id===id));
       if(cli&&upsertClient){
         upsertClient({...cli,
