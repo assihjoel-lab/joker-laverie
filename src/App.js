@@ -2323,6 +2323,9 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
           `🃏 *JOKER Laverie & Service*\n\n🎉 Bonne nouvelle ${c.client} !\n\nVotre linge est *PRÊT* à récupérer 🧺\n\n🎫 Ticket : *${c.id}*\n⚖️ Poids : ${c.poids} kg\n💰 Total : ${fmt(c.total)} FCFA\n\n📍 Venez le récupérer à la laverie\nou demandez la livraison 🛵 (+${fmt(LIVRAISON_TARIF)} FCFA)\n\nMerci de votre confiance ! 🙏`
         ),300);
       }
+      const updated={...c,statut:newStatut};
+      // ✅ Persister dans Firestore
+      upsertCmd(updated);
       // Sync statut dans historique client
       const cli=clients.find(cl=>(cl.commandes||[]).find(h=>h.id===id));
       if(cli&&upsertClient){
@@ -2331,13 +2334,44 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
           historique:(cli.historique||[]).map(h=>h.id===id?{...h,statut:newStatut}:h)
         });
       }
-      return {...c,statut:newStatut};
+      return updated;
     }));
   }
-  function confirmPoids(id,newP){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const t=calcTotal(newP,c.tarif,c.livraison);return{...c,poids:newP,total:t,points:Math.floor(t/100),poidsStatut:"confirmed"};}));}
-  function editFraisLiv(id,frais){setCommandes(p=>p.map(c=>{if(c.id!==id)return c;const sousTotal=Math.round(parseFloat(c.poids)*c.tarif);const total=sousTotal+frais;return{...c,livraisonFrais:frais,total,points:Math.floor(total/100)};}));}
-  function validerLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraisonStatut:"confirmed"}:c));}
-  function refuserLiv(id){setCommandes(p=>p.map(c=>c.id===id?{...c,livraison:null,livraisonStatut:null}:c));}
+  function confirmPoids(id,newP){
+    setCommandes(p=>p.map(c=>{
+      if(c.id!==id)return c;
+      const t=calcTotal(newP,c.tarif,c.livraison);
+      const updated={...c,poids:newP,total:t,points:Math.floor(t/100),poidsStatut:"confirmed"};
+      upsertCmd(updated);
+      return updated;
+    }));
+  }
+  function editFraisLiv(id,frais){
+    setCommandes(p=>p.map(c=>{
+      if(c.id!==id)return c;
+      const sousTotal=Math.round(parseFloat(c.poids)*c.tarif);
+      const total=sousTotal+frais;
+      const updated={...c,livraisonFrais:frais,total,points:Math.floor(total/100)};
+      upsertCmd(updated);
+      return updated;
+    }));
+  }
+  function validerLiv(id){
+    setCommandes(p=>p.map(c=>{
+      if(c.id!==id)return c;
+      const updated={...c,livraisonStatut:"confirmed"};
+      upsertCmd(updated);
+      return updated;
+    }));
+  }
+  function refuserLiv(id){
+    setCommandes(p=>p.map(c=>{
+      if(c.id!==id)return c;
+      const updated={...c,livraison:null,livraisonStatut:null};
+      upsertCmd(updated);
+      return updated;
+    }));
+  }
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){
     // Suppression directe dans Firebase
@@ -2346,7 +2380,15 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
     setCommandes(p=>p.filter(c=>c.id!==id));
   }
   const [ticketModal,setTicketModal]=useState(null);
-  function confirmerPaiement(id,mode){setCommandes(p=>p.map(c=>c.id===id?{...c,paiement:mode,paiementConfirme:true}:c));setPayCmd(null);}
+  function confirmerPaiement(id,mode){
+    setCommandes(p=>p.map(c=>{
+      if(c.id!==id)return c;
+      const updated={...c,paiement:mode,paiementConfirme:true};
+      upsertCmd(updated);
+      return updated;
+    }));
+    setPayCmd(null);
+  }
 
   const tabs=[
     {id:"home",      icon:"🏠",label:"Accueil"},
