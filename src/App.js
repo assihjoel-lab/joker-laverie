@@ -2357,7 +2357,7 @@ function ClientsDB({ commandes }) {
 }
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,onLogout }){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
@@ -2629,7 +2629,6 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       {tab==="livraisons"&&<GestionLivreurs livreurs={livreurs} setLivreurs={setLivreurs} commandes={commandes} setCommandes={setCommandes} />}
 
       {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} />}
-
       {tab==="plus"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
@@ -3059,6 +3058,8 @@ export default function App(){
             adminPw={adminPw}       setAdminPw={setAdminPw}
             paiementConfig={paiementConfig} savePaiementConfig={savePaiementConfig}
             statutLaverie={statutLaverie} saveStatutLaverie={saveStatutLaverie}
+            depenses={depenses}     upsertDepense={upsertDepense}   removeDepense={removeDepense}
+            objectifJour={objectifJour}     saveObjectifJour={saveObjectifJour}
             onLogout={handleLogout}
           />
         )}
