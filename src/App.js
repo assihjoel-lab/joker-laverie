@@ -164,6 +164,16 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [ticketPrint,setTicketPrint]=useState(null);
   const [fraisLiv,setFraisLiv]=useState(LIVRAISON_TARIF_DEFAULT);
   const [remisePct,setRemisePct]=useState(0);
+  const [estimation,setEstimation]=useState("4h");
+
+  const ESTIMATIONS=[
+    {id:"1h",label:"1 heure",duree:1},
+    {id:"2h",label:"2 heures",duree:2},
+    {id:"4h",label:"4 heures",duree:4},
+    {id:"8h",label:"8 heures",duree:8},
+    {id:"demain",label:"Demain matin",duree:24},
+    {id:"2j",label:"Dans 2 jours",duree:48},
+  ];
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
   const sousTotal=poids?Math.round(parseFloat(poids)*tarif.prix):0;
@@ -174,10 +184,16 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
 
   function creer(){
     if(!nom||!poids) return;
+    // Calculer l'heure de prêt estimée
+    const est=ESTIMATIONS.find(e=>e.id===estimation)||ESTIMATIONS[2];
+    const heureRetrait=new Date(Date.now()+est.duree*3600000);
+    const heureStr=estimation==="demain"?"demain matin vers 8h":estimation==="2j"?"après-demain matin":
+      heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd&apos;hui";
     const c={id:genId(),client:nom,tel,poids:parseFloat(poids),poidsStatut:isDepot?"estimated":"confirmed",
       tarifId:tarif.id,tarif:tarif.prix,total,statut:"En cours",date:todayStr(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,remise:remisePct,
-      livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false};
+      livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,
+      estimation:est.id,heureRetrait:heureRetrait.toISOString(),dureeEstimee:est.label};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
     // Auto-enregistrement client + historique permanent
@@ -189,6 +205,12 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       } else {
         upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total});
       }
+    }
+    // Envoyer confirmation WhatsApp avec estimation si numéro disponible
+    if(tel){
+      setTimeout(()=>sendWhatsApp(tel,
+        '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n⚖️ '+c.poids+' kg\n💰 '+fmt(total)+' FCFA\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
+      ),400);
     }
     setTicket(c);
   }
@@ -291,6 +313,22 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           <p style={{fontSize:12,color:BLU2,marginTop:6}}>+{pts} pts · {paiement.label}</p>
         </div>
       )}
+
+      {/* Estimation du temps */}
+      <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:16,border:`1px solid ${BDR}`}}>
+        <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>⏱️ Temps estimé de traitement</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+          {ESTIMATIONS.map(e=>(
+            <button key={e.id} onClick={()=>setEstimation(e.id)} style={{background:estimation===e.id?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:`1px solid ${estimation===e.id?BLU2:BDR}`,borderRadius:12,padding:"10px 6px",color:estimation===e.id?"#fff":"#8892B0",fontWeight:estimation===e.id?700:400,fontSize:12,cursor:"pointer",textAlign:"center"}}>
+              {e.label}
+            </button>
+          ))}
+        </div>
+        <p style={{fontSize:11,color:"#8892B0",marginTop:8,textAlign:"center"}}>
+          💬 Le client sera notifié par WhatsApp
+        </p>
+      </div>
+
       <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||!poids} />
     </div>
   );
@@ -415,6 +453,14 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
           <p style={{fontWeight:700,fontSize:15}}>{c.client} {c.typeRamassage&&<span style={{background:"#FF6B3520",color:"#FF6B35",borderRadius:6,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>🧺 RAMASSAGE</span>}</p>
           <p style={{fontSize:12,color:"#8892B0"}}>{c.id} · {c.date} {c.livraison?"· 🛵":""}</p>
           {c.tel&&<p style={{fontSize:11,color:"#8892B0",marginTop:2}}>📞 {c.tel}</p>}
+          {c.statut==="En cours"&&c.dureeEstimee&&(()=>{
+            const restMs=c.heureRetrait?new Date(c.heureRetrait).getTime()-Date.now():null;
+            const depasse=restMs!==null&&restMs<0;
+            const restH=restMs?Math.max(0,Math.ceil(restMs/3600000)):null;
+            return <p style={{fontSize:11,color:depasse?"#FF6B6B":"#FFB800",marginTop:2,fontWeight:600}}>
+              ⏱️ {depasse?"Délai dépassé — à traiter":"Prêt dans ~"+restH+"h ("+c.dureeEstimee+")"}
+            </p>;
+          })()}
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
           <Badge statut={c.statut} />
@@ -1952,6 +1998,31 @@ function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,fri
                 </div>
               ))}
               {res.paiementConfirme&&<div style={{background:"#0D3B2E",borderRadius:10,padding:"10px",marginTop:10,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700,fontSize:13}}>✅ Paiement confirmé</p></div>}
+
+              {/* ⏱️ Estimation du temps - affiché si En cours */}
+              {res.statut==="En cours"&&res.dureeEstimee&&(()=>{
+                const maintenant=Date.now();
+                const retrait=res.heureRetrait?new Date(res.heureRetrait).getTime():null;
+                const restMs=retrait?retrait-maintenant:null;
+                const restH=restMs?Math.max(0,Math.ceil(restMs/3600000)):null;
+                const depasse=restMs!==null&&restMs<0;
+                return (
+                  <div style={{background:depasse?"#1A0A00":"#0D1A3D",borderRadius:12,padding:"12px 14px",marginTop:10,border:`1px solid ${depasse?"#FF6B6B40":BLU2+"40"}`}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:20}}>⏱️</span>
+                      <div>
+                        <p style={{fontWeight:700,fontSize:13,color:depasse?"#FF6B6B":CYAN}}>
+                          {depasse?"Traitement en cours...":"Prêt dans environ "+restH+"h"}
+                        </p>
+                        <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>
+                          Estimation : {res.dureeEstimee}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {res.statut==="En cours"&&!res.paiementConfirme&&(
                 <div style={{marginTop:12}}>
                   <p style={{fontSize:12,color:"#8892B0",marginBottom:10}}>Payer par mobile money :</p>
