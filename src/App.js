@@ -513,11 +513,17 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         {c.livraison&&c.statut!=="Récupéré"&&(
           <button onClick={()=>setEditFrais(!editFrais)} style={{background:"#A855F720",border:"1px solid #A855F740",borderRadius:10,color:"#A855F7",padding:"7px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✏️ Frais liv.</button>
         )}
-        {c.statut!=="Récupéré"&&<button onClick={onPay} style={{background:c.paiementConfirme?"#0D3B2E":`linear-gradient(135deg,#004d20,${BLU})`,border:`1px solid ${c.paiementConfirme?CYAN+"40":"rgba(0,166,81,0.3)"}`,borderRadius:10,color:c.paiementConfirme?CYAN:"#fff",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{c.paiementConfirme?"✅ Payé":"💳 Payer"}</button>}
+        {/* Bouton Payer — toujours visible si pas encore payé */}
+        {!c.paiementConfirme&&<button onClick={onPay} style={{background:`linear-gradient(135deg,#004d20,${BLU})`,border:"1px solid rgba(0,166,81,0.3)",borderRadius:10,color:"#fff",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>💳 Payer</button>}
+        {c.paiementConfirme&&<span style={{background:"#0D3B2E",border:`1px solid ${CYAN}40`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700}}>✅ Payé</span>}
         {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>💬 Notifier</button>}
         <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
+        {/* Bouton confirmer récupération après livraison */}
+        {c.livraison&&c.livraisonStatut==="confirmed"&&c.statut==="Prêt"&&(
+          <button onClick={onNext} style={{background:"linear-gradient(135deg,#004d20,#006b2b)",border:"1px solid #4ADE8040",borderRadius:10,color:"#4ADE80",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>📦 Linge remis</button>
+        )}
       </div>
       {editFrais&&(
         <div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}>
@@ -1538,587 +1544,6 @@ function Reglages({ gerantPin,setGerantPin,adminPw,setAdminPw }){
 }
 
 // ─── FIDÉLITÉ CLIENT (espace public) ─────────────────────
-function ClientFidelite({ commandes, rewards }){
-  const [rech, setRech] = useState("");
-  const [resultat, setResultat] = useState(null);
-  const [notFound, setNotFound] = useState(false);
-
-  function chercher(){
-    const terme = rech.trim().toLowerCase();
-    if(!terme) return;
-    // Agréger les points de toutes les commandes du client (par nom ou tel)
-    const cmds = commandes.filter(c =>
-      c.client.toLowerCase().includes(terme) ||
-      (c.tel && c.tel.replace(/\s/g,"").includes(rech.trim().replace(/\s/g,"")))
-    );
-    if(cmds.length === 0){ setResultat(null); setNotFound(true); return; }
-    const totalPts = cmds.reduce((s,c)=>s+(c.points||0),0);
-    const totalDepense = cmds.filter(c=>c.paiementConfirme).reduce((s,c)=>s+c.total,0);
-    const nom = cmds[0].client;
-    const tel = cmds[0].tel || "—";
-    setResultat({ nom, tel, points: totalPts, nbCommandes: cmds.length, totalDepense, cmds });
-    setNotFound(false);
-  }
-
-  const lv = resultat ? getLevel(resultat.points) : null;
-
-  return (
-    <div style={{padding:"16px 20px 0"}}>
-      {/* Barre de recherche */}
-      <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:20,padding:20,marginBottom:16,border:"1px solid rgba(0,194,255,0.2)"}}>
-        <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,letterSpacing:2,marginBottom:4,textAlign:"center"}}>Mon Solde de Points</p>
-        <p style={{color:"#8892B0",fontSize:12,marginBottom:14,textAlign:"center"}}>Entrez votre nom ou numéro de téléphone</p>
-        <div style={{display:"flex",gap:8}}>
-          <input
-            value={rech}
-            onChange={e=>setRech(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&chercher()}
-            placeholder="Nom ou téléphone…"
-            style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:14,outline:"none"}}
-          />
-          <button onClick={chercher} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px 16px",color:"#fff",fontWeight:700,fontSize:18,cursor:"pointer"}}>🔍</button>
-        </div>
-        {notFound && <p style={{color:"#FF6B6B",fontSize:13,marginTop:10,textAlign:"center"}}>❌ Aucun compte trouvé avec ce nom ou ce numéro.</p>}
-      </div>
-
-      {/* Résultat : carte du solde */}
-      {resultat && lv && (
-        <div style={{animation:"fadeIn 0.35s ease"}}>
-          <div style={{background:`linear-gradient(135deg,${lv.color}18,${CARD})`,borderRadius:22,padding:22,marginBottom:16,border:`2px solid ${lv.color}50`}}>
-            <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
-              <div style={{width:56,height:56,borderRadius:16,background:`${lv.color}30`,border:`2px solid ${lv.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28}}>
-                {lv.label==="Bronze"?"🥉":lv.label==="Silver"?"🥈":lv.label==="Gold"?"🥇":"💎"}
-              </div>
-              <div>
-                <p style={{fontWeight:700,fontSize:18,color:"#F8FAFF"}}>{resultat.nom}</p>
-                <p style={{fontSize:12,color:"#8892B0"}}>{resultat.tel}</p>
-                <span style={{background:`${lv.color}22`,color:lv.color,borderRadius:99,padding:"2px 10px",fontSize:11,fontWeight:700}}>{lv.label}</span>
-              </div>
-            </div>
-            <div style={{textAlign:"center",background:"rgba(0,0,0,0.3)",borderRadius:16,padding:"16px 0",marginBottom:14}}>
-              <p style={{color:"#8892B0",fontSize:11,letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>Solde de points</p>
-              <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:56,color:lv.color,lineHeight:1,letterSpacing:2}}>{resultat.points}</p>
-              <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>points fidélité</p>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {[
-                {l:"Commandes",v:resultat.nbCommandes,c:BLU2},
-                {l:"Total dépensé",v:fmt(resultat.totalDepense)+" F",c:CYAN},
-              ].map(s=>(
-                <div key={s.l} style={{background:CARD,borderRadius:12,padding:12,textAlign:"center",border:`1px solid ${BDR}`}}>
-                  <p style={{fontWeight:700,fontSize:16,color:s.c}}>{s.v}</p>
-                  <p style={{fontSize:11,color:"#8892B0",marginTop:3}}>{s.l}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Récompenses accessibles */}
-          <STitle text="Récompenses disponibles" />
-          {rewards.map(r=>{
-            const can = resultat.points >= r.pts;
-            return (
-              <div key={r.id} style={{display:"flex",alignItems:"center",gap:14,background:CARD,borderRadius:16,padding:"12px 14px",marginBottom:10,border:`1px solid ${can?r.color+"40":BDR}`,opacity:can?1:0.55}}>
-                <div style={{width:42,height:42,borderRadius:12,background:`${r.color}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{r.emoji}</div>
-                <div style={{flex:1}}>
-                  <p style={{fontWeight:700,fontSize:14,color:"#F8FAFF"}}>{r.label}</p>
-                  <p style={{fontSize:12,color:"#8892B0"}}>{r.desc}</p>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <p style={{color:can?r.color:"#8892B0",fontWeight:700,fontSize:13}}>{r.pts} pts</p>
-                  {can && <p style={{fontSize:10,color:r.color,marginTop:2}}>✅ Disponible</p>}
-                </div>
-              </div>
-            );
-          })}
-          <div style={{background:"#0D1F6E22",borderRadius:14,padding:"12px 16px",border:`1px solid ${BLU2}30`,marginTop:4,marginBottom:20}}>
-            <p style={{color:BLU2,fontSize:12,fontWeight:600}}>💡 Pour utiliser vos points, présentez-vous à la laverie avec votre ticket.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Barème des niveaux si pas encore de recherche */}
-      {!resultat && !notFound && (
-        <>
-          <STitle text="Niveaux de fidélité" />
-          {LEVEL_SEUILS.map(l=>(
-            <div key={l.label} style={{display:"flex",alignItems:"center",gap:12,background:CARD,borderRadius:12,padding:"10px 14px",marginBottom:8,border:`1px solid ${l.color}30`}}>
-              <span style={{fontSize:18}}>{l.label==="Bronze"?"🥉":l.label==="Silver"?"🥈":l.label==="Gold"?"🥇":"💎"}</span>
-              <div style={{flex:1}}><p style={{fontWeight:700,fontSize:13,color:l.color}}>{l.label}</p><p style={{fontSize:11,color:"#8892B0"}}>{l.max===Infinity?`dès ${fmt(l.min)} pts`:`${fmt(l.min)}–${fmt(l.max)} pts`}</p></div>
-            </div>
-          ))}
-          <div style={{background:"#0D1F6E22",borderRadius:14,padding:"12px 16px",border:`1px solid ${BLU2}30`,marginTop:8,marginBottom:20}}>
-            <p style={{color:BLU2,fontSize:12,fontWeight:600}}>💡 1 point = 100 FCFA dépensés</p>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── ÉVALUATION CLIENT ────────────────────────────────────
-function EvaluationBlock({ commande, setCommandes, upsertCmd }){
-  const [note, setNote] = useState(commande.note||0);
-  const [hover, setHover] = useState(0);
-  const [commentaire, setCommentaire] = useState(commande.commentaire||"");
-  const [submitted, setSubmitted] = useState(!!commande.note);
-
-  function soumettre(){
-    if(!note) return;
-    const updated = {...commande, note, commentaire};
-    setCommandes(p=>p.map(c=>c.id===commande.id?updated:c));
-    if(upsertCmd) upsertCmd(updated);
-    setSubmitted(true);
-  }
-
-  if(submitted){
-    return (
-      <div style={{marginTop:14,background:"linear-gradient(135deg,#0D2A3D,#0D1F6E22)",borderRadius:16,padding:16,border:`1px solid ${CYAN}30`,textAlign:"center",animation:"fadeIn 0.3s ease"}}>
-        <p style={{fontSize:24,marginBottom:6}}>{"⭐".repeat(note)}</p>
-        <p style={{color:CYAN,fontWeight:700,fontSize:14,marginBottom:4}}>Merci pour votre avis !</p>
-        {commentaire&&<p style={{color:"#8892B0",fontSize:12,fontStyle:"italic"}}>"{commentaire}"</p>}
-        <p style={{color:"#8892B0",fontSize:11,marginTop:8}}>Votre retour nous aide à nous améliorer 🙏</p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{marginTop:14,background:CARD,borderRadius:16,padding:16,border:`1px solid ${BDR}`,animation:"fadeIn 0.3s ease"}}>
-      <p style={{fontWeight:700,fontSize:14,marginBottom:4}}>⭐ Notez votre expérience</p>
-      <p style={{color:"#8892B0",fontSize:12,marginBottom:12}}>Comment s'est passée votre visite chez JOKER Laverie ?</p>
-      {/* Étoiles */}
-      <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:14}}>
-        {[1,2,3,4,5].map(n=>(
-          <button key={n}
-            onClick={()=>setNote(n)}
-            onMouseEnter={()=>setHover(n)}
-            onMouseLeave={()=>setHover(0)}
-            style={{background:"none",border:"none",fontSize:32,cursor:"pointer",transition:"transform 0.1s",transform:(hover||note)>=n?"scale(1.2)":"scale(1)",filter:(hover||note)>=n?"none":"grayscale(1) opacity(0.4)"}}>
-            ⭐
-          </button>
-        ))}
-      </div>
-      {note>0&&(
-        <div style={{animation:"fadeIn 0.2s ease"}}>
-          <p style={{fontSize:12,color:"#8892B0",textAlign:"center",marginBottom:10}}>
-            {["","😞 Décevant","😐 Passable","🙂 Bien","😊 Très bien","🤩 Excellent !"][note]}
-          </p>
-          <textarea
-            value={commentaire}
-            onChange={e=>setCommentaire(e.target.value)}
-            placeholder="Un commentaire ? (optionnel)"
-            rows={2}
-            style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",resize:"none",marginBottom:10}}
-          />
-          <button onClick={soumettre} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>
-            Envoyer mon avis ✓
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ─── RAMASSAGE À DOMICILE ─────────────────────────────────
-function RamassageBlock({ commandes, setCommandes, upsertCmd, upsertClient, clients, tarifs }){
-  const [show,    setShow]   = useState(false);
-  const [nom,     setNom]    = useState("");
-  const [tel,     setTel]    = useState("");
-  const [adr,     setAdr]    = useState("");
-  const [sent,    setSent]   = useState(false);
-  const [loading, setLoading]= useState(false);
-  const [tarifId, setTarifId]= useState(1);
-  const [poids,   setPoids]  = useState("");
-
-  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
-  const tarifSel = tarifsDisp.find(t=>t.id===tarifId)||tarifsDisp[0];
-  const sousTotal = poids&&tarifSel ? Math.round(parseFloat(poids)*tarifSel.prix) : 0;
-  const totalEst = sousTotal + 500; // +500 frais ramassage
-
-  function envoyerGeo(){
-    if(!navigator.geolocation){alert("Géolocalisation non disponible");return;}
-    setLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const lat=pos.coords.latitude.toFixed(6);
-        const lng=pos.coords.longitude.toFixed(6);
-        const acc=Math.round(pos.coords.accuracy);
-        setAdr(`https://maps.google.com/?q=${lat},${lng} (±${acc}m)`);
-        setLoading(false);
-      },
-      ()=>{setLoading(false);alert("Position indisponible. Entrez votre adresse manuellement.");},
-      {enableHighAccuracy:true,timeout:15000,maximumAge:0}
-    );
-  }
-
-  function envoyer(){
-    if(!nom||!tel||!adr)return;
-    const demandeId="RAM-"+String(Math.floor(Math.random()*9000)+1000);
-    const existingCli=(clients||[]).find(cl=>cl.tel===tel.trim()||cl.nom?.toLowerCase()===nom.trim().toLowerCase());
-    const codeClient=existingCli?.codeClient||("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
-    const demande={
-      id:demandeId, client:nom.trim(), tel:tel.trim(), adresse:adr.trim(),
-      poids:parseFloat(poids)||0, tarifId:tarifSel.id, tarif:tarifSel.prix,
-      total:sousTotal, points:Math.floor(sousTotal/100),
-      statut:"En cours", date:todayStr(), paiement:"especes",
-      livraison:"depot", livraisonStatut:"pending",
-      livreurNom:null, livreurTel:null, paiementConfirme:false, codeClient,
-      fraisLiv:500, poidsStatut:"estimated",
-    };
-    // Sauvegarder directement dans Firebase
-    if(upsertCmd){
-      upsertCmd(demande);
-    } else {
-      setCommandes(p=>[demande,...p]);
-    }
-    // Auto-enregistrement client
-    if(upsertClient&&nom.trim()){
-      const cmdEntry={id:demande.id,date:demande.date,total:demande.total,poids:demande.poids,statut:demande.statut,service:tarifSel.label};
-      if(existingCli){
-        upsertClient({...existingCli,codeClient,historique:[cmdEntry,...(existingCli.historique||[])],totalDepense:(existingCli.totalDepense||0)+demande.total});
-      } else {
-        upsertClient({id:"cli_"+demandeId,nom:nom.trim(),tel:tel.trim(),adresse:adr,notes:"Demande ramassage",points:demande.points,totalDepense:demande.total,historique:[cmdEntry],codeClient});
-      }
-    }
-    // WhatsApp gérant
-    const msg=`🧺 *DEMANDE RAMASSAGE*%0A%0A🎫 ${demandeId}%0A👤 ${nom.trim()}%0A📞 ${tel.trim()}%0A📍 ${adr}%0A%0A👕 Service : ${tarifSel.label}%0A⚖️ Poids estimé : ${poids||"?"}kg%0A💰 Montant estimé : ${fmt(totalEst)} FCFA%0A%0A🔑 Code client : ${codeClient}`;
-    sendWhatsApp("22879621085", msg);
-    // WhatsApp client avec son code
-    if(tel.trim()) sendWhatsApp(tel.trim(), `🃏 *JOKER Laverie & Service*%0A%0A✅ Demande de ramassage enregistrée !%0A%0A🎫 N° : ${demandeId}%0A🔑 Votre code client : *${codeClient}*%0A%0AConservez ce code pour suivre vos commandes dans notre appli.%0A%0A📱 joker-laverie.vercel.app`);
-    setSent(true); setShow(false);
-    setNom(""); setTel(""); setAdr(""); setPoids("");
-  }
-
-  if(sent) return (
-    <div style={{background:"#0D2A1A",borderRadius:16,padding:16,marginBottom:14,border:"1px solid #25D36640",textAlign:"center"}}>
-      <p style={{fontSize:28,marginBottom:6}}>✅</p>
-      <p style={{color:"#25D366",fontWeight:700,fontSize:15}}>Demande envoyée !</p>
-      <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>Nous vous contacterons très bientôt.</p>
-      <button onClick={()=>setSent(false)} style={{marginTop:10,background:"none",border:"none",color:"#4A7BF7",fontSize:12,cursor:"pointer"}}>Faire une autre demande</button>
-    </div>
-  );
-
-  return (
-    <div style={{marginBottom:14}}>
-      <button onClick={()=>setShow(!show)} style={{width:"100%",background:"linear-gradient(135deg,#0D2A1A,#0D3B2E)",border:"1px solid #25D36640",borderRadius:16,padding:"14px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,textAlign:"left"}}>
-        <span style={{fontSize:28}}>🧺</span>
-        <div style={{flex:1}}>
-          <p style={{color:"#25D366",fontWeight:700,fontSize:14}}>Faire ramasser mon linge</p>
-          <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>On vient chercher chez vous · Lomé</p>
-        </div>
-        <span style={{color:"#25D366",fontSize:20}}>{show?"▲":"▼"}</span>
-      </button>
-
-      {show&&(
-        <div style={{background:"#060D1F",border:"1px solid #25D36640",borderRadius:"0 0 16px 16px",padding:16,borderTop:"none"}}>
-          <input value={nom} onChange={e=>setNom(e.target.value)} placeholder="Votre nom *"
-            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
-          <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone *" type="tel"
-            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
-
-          {/* Choix du service */}
-          <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Service souhaité</p>
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
-            {tarifsDisp.map(t=>(
-              <button key={t.id} onClick={()=>setTarifId(t.id)} style={{background:tarifId===t.id?`${BLU}40`:DARK,border:`1px solid ${tarifId===t.id?BLU2:BDR}`,borderRadius:12,padding:"10px 14px",color:tarifId===t.id?BLU2:"#8892B0",fontWeight:tarifId===t.id?700:400,fontSize:13,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span>{t.label}</span>
-                <span style={{color:CYAN,fontWeight:700}}>{fmt(t.prix)} F/kg</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Poids estimé */}
-          <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Poids estimé (kg)</p>
-          <input value={poids} onChange={e=>setPoids(e.target.value)} placeholder="ex: 3.5" type="number" step="0.5"
-            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
-
-          {/* Montant estimé */}
-          {sousTotal>0&&(
-            <div style={{background:`${BLU}20`,borderRadius:14,padding:"12px 16px",marginBottom:12,border:`1px solid ${BLU2}40`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                <span style={{color:"#8892B0",fontSize:13}}>Lavage ({poids}kg × {fmt(tarifSel.prix)} F)</span>
-                <span style={{color:"#F8FAFF",fontWeight:700,fontSize:13}}>{fmt(sousTotal)} F</span>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                <span style={{color:"#8892B0",fontSize:13}}>Frais ramassage</span>
-                <span style={{color:"#A855F7",fontWeight:700,fontSize:13}}>+500 F</span>
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",borderTop:`1px solid ${BDR}`,paddingTop:8,marginTop:4}}>
-                <span style={{color:"#F8FAFF",fontWeight:700}}>TOTAL ESTIMÉ</span>
-                <span style={{color:CYAN,fontWeight:700,fontSize:18}}>{fmt(totalEst)} F</span>
-              </div>
-              <p style={{color:"#8892B0",fontSize:10,marginTop:4}}>*Le poids sera confirmé à l'arrivée</p>
-            </div>
-          )}
-
-          {/* Adresse / GPS */}
-          <input value={adr} onChange={e=>setAdr(e.target.value)} placeholder="Votre adresse / quartier *"
-            style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:8}} />
-          <button onClick={envoyerGeo} disabled={loading} style={{width:"100%",background:"#0D2A1A",border:"1px solid #25D36640",borderRadius:12,padding:"10px",color:"#25D366",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-            {loading?"📍 Localisation...":"📍 Utiliser ma position GPS"}
-          </button>
-          {adr&&adr.includes("maps.google")&&(
-            <p style={{color:"#25D366",fontSize:11,marginBottom:8,textAlign:"center"}}>✅ Position GPS détectée</p>
-          )}
-          <button onClick={envoyer} disabled={!nom||!tel||!adr} style={{width:"100%",background:nom&&tel&&adr?"linear-gradient(135deg,#25D366,#128C7E)":"#1A2240",border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:15,cursor:nom&&tel&&adr?"pointer":"default"}}>
-            📲 Envoyer la demande
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-// ─── ESPACE CLIENT ────────────────────────────────────────
-function ClientSpace({ commandes,setCommandes,upsertCmd,upsertClient,clients,friperie,rewards,tarifs }){
-  const [tab,setTab]=useState("suivi");
-  // Pré-remplir depuis URL ?ticket=XXX (scan QR code)
-  const urlTicket = new URLSearchParams(window.location.search).get("ticket")||"";
-  const [rech,setRech]=useState(urlTicket);
-  const [res,setRes]=useState(null);
-  const [resAll,setResAll]=useState(null);
-  const [notFound,setNotFound]=useState(false);
-  const [showLiv,setShowLiv]=useState(false);
-  const [livType,setLivType]=useState("recuperation");
-  const [adresse,setAdresse]=useState("");
-  const [tel,setTel]=useState("");
-  const [sent,setSent]=useState(false);
-
-  // Auto-chercher si ticket dans URL
-  useEffect(()=>{
-    if(urlTicket&&commandes.length>0){
-      const exact=commandes.find(c=>c.id.toLowerCase()===urlTicket.toLowerCase());
-      if(exact){setRes(exact);setResAll(null);setNotFound(false);}
-      else setNotFound(true);
-    }
-  },[urlTicket,commandes.length]);
-
-  function chercher(){
-    const terme=rech.trim().toLowerCase();
-    // Chercher par N° exact d'abord
-    const exact=commandes.find(c=>c.id.toLowerCase()===terme);
-    if(exact){setRes(exact);setResAll(null);setNotFound(false);setShowLiv(false);setSent(false);return;}
-    // Sinon chercher toutes les commandes du client par nom ou tél
-    const all=commandes.filter(c=>c.client.toLowerCase().includes(terme)||(c.tel&&c.tel.includes(rech.trim())));
-    if(all.length>0){setResAll(all.slice().reverse());setRes(null);setNotFound(false);}
-    else{setResAll(null);setRes(null);setNotFound(true);}
-    setShowLiv(false);setSent(false);
-  }
-  function demanderLiv(geoLink){
-    const adr = geoLink || adresse;
-    if(!adr)return;
-    setCommandes(p=>p.map(c=>c.id===res.id?{...c,livraison:livType,adresse:adr,tel:tel||c.tel,livraisonStatut:"pending"}:c));
-    setRes(p=>({...p,livraison:livType,adresse:adr,livraisonStatut:"pending"}));
-    const typeLabel=livType==="les-deux"?"Aller-retour":"Livraison";
-    const msg=`🛵 *DEMANDE LIVRAISON*%0A%0A🎫 ${res.id}%0A👤 ${res.client}%0A📞 ${tel||res.tel||"—"}%0A📍 ${adr}%0A🔄 ${typeLabel}`;
-    sendWhatsApp("22879621085",msg);
-    setSent(true);setShowLiv(false);
-  }
-
-  function demanderLivGeo(){
-    if(!navigator.geolocation){alert("Géolocalisation non disponible");return;}
-    navigator.geolocation.getCurrentPosition(
-      pos=>{
-        const geoLink=`https://maps.google.com/?q=${pos.coords.latitude},${pos.coords.longitude}`;
-        setAdresse(geoLink);
-        demanderLiv(geoLink);
-      },
-      ()=>alert("Position indisponible. Entrez votre adresse manuellement.")
-    );
-  }
-
-  return (
-    <div style={{paddingBottom:70}}>
-      <div style={{padding:"32px 20px 0",textAlign:"center"}}>
-        <Logo size={80} style={{margin:"0 auto 12px"}} />
-        <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:3}}>JOKER LAVERIE</h1>
-        <p style={{color:BLU2,fontSize:11,letterSpacing:3,marginTop:2}}>PROPRETÉ · QUALITÉ · FIABILITÉ</p>
-        <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>Lomé, Togo</p>
-      </div>
-      <div style={{display:"flex",margin:"16px 20px 0",background:CARD,borderRadius:14,overflow:"hidden",border:`1px solid ${BDR}`}}>
-        {[{id:"suivi",l:"📦 Commande"},{id:"fidelite",l:"🏅 Fidélité"},{id:"friperie",l:"👗 Friperie"}].map(tb=>(
-          <button key={tb.id} onClick={()=>setTab(tb.id)} style={{flex:1,background:tab===tb.id?`linear-gradient(135deg,${BLU},${BLU2})`:"transparent",border:"none",padding:"12px 4px",color:tab===tb.id?"#fff":"#8892B0",fontWeight:700,fontSize:11,cursor:"pointer"}}>{tb.l}</button>
-        ))}
-      </div>
-
-      {tab==="suivi"&&(
-        <div style={{padding:"16px 20px 0"}}>
-
-          {/* Bouton ramassage à domicile */}
-          <RamassageBlock commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} tarifs={tarifs} />
-
-          <div style={{display:"flex",gap:10,marginBottom:14}}>
-            <input value={rech} onChange={e=>setRech(e.target.value)} onKeyDown={e=>e.key==="Enter"&&chercher()} placeholder="N° ticket ou nom…" style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:15,outline:"none"}} />
-            <button onClick={chercher} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px 16px",color:"#fff",fontWeight:700,fontSize:18,cursor:"pointer"}}>🔍</button>
-          </div>
-          {notFound&&<p style={{color:"#FF6B6B",fontSize:14,marginBottom:12}}>Aucune commande trouvée.</p>}
-          {resAll&&(
-            <div style={{marginBottom:16}}>
-              <p style={{fontSize:13,color:"#8892B0",marginBottom:10}}>
-                <span style={{color:BLU2,fontWeight:700}}>{resAll[0]?.client}</span> — {resAll.length} commande{resAll.length>1?"s":""}
-              </p>
-              {/* Filtres statut */}
-              <div style={{display:"flex",gap:6,marginBottom:12,overflowX:"auto",paddingBottom:4}}>
-                {["Tous","En cours","Prêt","Récupéré"].map(s=>{
-                  const count=s==="Tous"?resAll.length:resAll.filter(c=>c.statut===s).length;
-                  const active=(!window._clientFilter&&s==="Tous")||(window._clientFilter===s);
-                  return count>0&&<button key={s} onClick={()=>{window._clientFilter=s==="Tous"?null:s;document.querySelectorAll("[data-cmd-filter]").forEach(el=>el.style.display=s==="Tous"||(el.dataset.cmdFilter===s)?"block":"none");}} style={{flexShrink:0,background:active?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${active?BLU2:BDR}`,borderRadius:20,padding:"5px 12px",color:active?"#fff":"#8892B0",fontWeight:700,fontSize:11,cursor:"pointer"}}>{s} ({count})</button>;
-                })}
-              </div>
-              {resAll.map(c=>(
-                <div key={c.id} data-cmd-filter={c.statut} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${statutColor[c.statut]||BLU2}40`,cursor:"pointer"}} onClick={()=>{setRes(c);setResAll(null);}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                    <span style={{fontWeight:700,color:BLU2,fontSize:13}}>{c.id}</span>
-                    <Badge statut={c.statut} />
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:12,color:"#8892B0"}}>{c.date} · {c.poids}kg</span>
-                    <span style={{fontSize:13,fontWeight:700,color:"#F8FAFF"}}>{fmt(c.total)} F</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontSize:11,color:c.paiementConfirme?"#4ADE80":"#FFB800"}}>{c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span>
-                    <span style={{fontSize:11,color:"#8892B0"}}>Tap pour détails →</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {res&&(
-            <div style={{background:CARD,borderRadius:20,padding:18,marginBottom:16,border:`1px solid ${statutColor[res.statut]||BLU2}40`}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}>
-                <div><p style={{fontWeight:700,fontSize:16}}>{res.client}</p><p style={{fontSize:13,color:"#8892B0"}}>{res.id} · {res.date}</p></div>
-                <Badge statut={res.statut} />
-              </div>
-              {[["Poids",res.poids+"kg"+(res.poidsStatut==="estimated"?" (estimé)":"")],["Total",fmt(res.total)+" FCFA"+(res.poidsStatut==="estimated"?" (estimé)":"")],["+Points","+"+res.points+" 🏅"]].map(([k,v])=>(
-                <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-                  <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
-                  <span style={{fontWeight:700,color:k==="+Points"?BLU2:"#F8FAFF",fontSize:13}}>{v}</span>
-                </div>
-              ))}
-              {res.paiementConfirme&&<div style={{background:"#0D3B2E",borderRadius:10,padding:"10px",marginTop:10,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700,fontSize:13}}>✅ Paiement confirmé</p></div>}
-
-              {/* ⏱️ Estimation du temps - affiché si En cours */}
-              {res.statut==="En cours"&&res.dureeEstimee&&(()=>{
-                const maintenant=Date.now();
-                const retrait=res.heureRetrait?new Date(res.heureRetrait).getTime():null;
-                const restMs=retrait?retrait-maintenant:null;
-                const restH=restMs?Math.max(0,Math.ceil(restMs/3600000)):null;
-                const depasse=restMs!==null&&restMs<0;
-                return (
-                  <div style={{background:depasse?"#1A0A00":"#0D1A3D",borderRadius:12,padding:"12px 14px",marginTop:10,border:`1px solid ${depasse?"#FF6B6B40":BLU2+"40"}`}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:20}}>⏱️</span>
-                      <div>
-                        <p style={{fontWeight:700,fontSize:13,color:depasse?"#FF6B6B":CYAN}}>
-                          {depasse?"Traitement en cours...":"Prêt dans environ "+restH+"h"}
-                        </p>
-                        <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>
-                          Estimation : {res.dureeEstimee}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {res.statut==="En cours"&&!res.paiementConfirme&&(
-                <div style={{marginTop:12}}>
-                  <p style={{fontSize:12,color:"#8892B0",marginBottom:10}}>Payer par mobile money :</p>
-                  <div style={{display:"flex",gap:10}}>
-                    <button onClick={()=>sendWhatsApp(JOKER_FLOOZ,`🃏 *JOKER Laverie*\n\n💳 Paiement Flooz\n\nEnvoyez *${fmt(res.total)} FCFA* au :\n📱 *${JOKER_FLOOZ}*\n\n🎫 Réf: *${res.id}*`)} style={{flex:1,background:"linear-gradient(135deg,#004d20,#006b2b)",border:"1px solid #00A65140",borderRadius:14,padding:"14px 8px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                      <span style={{fontSize:20}}>🟢</span><span>Flooz</span>
-                    </button>
-                    <button onClick={()=>sendWhatsApp(JOKER_TMONEY,`🃏 *JOKER Laverie*\n\n💳 Paiement T-Money\n\nEnvoyez *${fmt(res.total)} FCFA* au :\n📱 *${JOKER_TMONEY}*\n\n🎫 Réf: *${res.id}*`)} style={{flex:1,background:"linear-gradient(135deg,#4d0000,#6b0000)",border:"1px solid #E3061340",borderRadius:14,padding:"14px 8px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
-                      <span style={{fontSize:20}}>🔴</span><span>T-Money</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-              {res.livraison&&<div style={{background:res.livraisonStatut==="pending"?"#1A0D3D":"#0D1F6E",borderRadius:10,padding:"10px",marginTop:10,border:`1px solid ${res.livraisonStatut==="pending"?"#A855F7":BLU2}40`}}><p style={{color:res.livraisonStatut==="pending"?"#A855F7":CYAN,fontWeight:700,fontSize:13}}>{res.livraisonStatut==="pending"?"⏳ Livraison en attente":"✅ Livraison confirmée"}</p></div>}
-              {res.statut==="Prêt"&&!res.livraison&&!sent&&(
-                <div style={{marginTop:12}}>
-                  <div style={{background:"#0D1F6E",borderRadius:10,padding:"10px",textAlign:"center",border:`1px solid ${BLU2}40`,marginBottom:10}}><p style={{color:CYAN,fontWeight:700}}>🎉 Votre linge est prêt !</p></div>
-                  <button onClick={()=>setShowLiv(!showLiv)} style={{width:"100%",background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:12,padding:"12px",color:"#A855F7",fontWeight:700,fontSize:14,cursor:"pointer"}}>🛵 Demander la livraison</button>
-                </div>
-              )}
-              {res.statut==="Récupéré"&&<EvaluationBlock commande={res} setCommandes={setCommandes} upsertCmd={upsertCmd} />}
-              {sent&&<div style={{marginTop:10,background:"#0D2A3D",borderRadius:10,padding:"12px",border:`1px solid ${CYAN}40`,textAlign:"center"}}><p style={{color:CYAN,fontWeight:700}}>✅ Demande envoyée !</p></div>}
-              {showLiv&&(
-                <div style={{marginTop:12,background:DARK,borderRadius:14,padding:16,border:"1px solid rgba(168,85,247,0.3)"}}>
-                  <div style={{display:"flex",gap:8,marginBottom:10}}>
-                    {[{id:"recuperation",l:"Récupération"},{id:"les-deux",l:"Aller-retour"}].map(o=>(
-                      <button key={o.id} onClick={()=>setLivType(o.id)} style={{flex:1,background:livType===o.id?"#1A0D3D":CARD,border:`1px solid ${livType===o.id?"#A855F7":BDR}`,borderRadius:12,padding:"10px",color:livType===o.id?"#A855F7":"#8892B0",fontWeight:600,fontSize:12,cursor:"pointer"}}>{o.l}</button>
-                    ))}
-                  </div>
-                  <input value={adresse} onChange={e=>setAdresse(e.target.value)} placeholder="Votre adresse *" style={{width:"100%",background:CARD,border:"1px solid rgba(168,85,247,0.3)",borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
-                  <button onClick={demanderLivGeo} style={{width:"100%",background:"#0D2A1A",border:"1px solid #25D36640",borderRadius:12,padding:"11px",color:"#25D366",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                    <span>📍</span> Envoyer ma position GPS
-                  </button>
-                  <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone" style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}} />
-                  <p style={{fontSize:11,color:"#A855F780",marginBottom:10}}>+{fmt(LIVRAISON_TARIF)} FCFA · Confirmation requise</p>
-                  <button onClick={demanderLiv} disabled={!adresse} style={{width:"100%",background:adresse?"linear-gradient(135deg,#6B21A8,#A855F7)":CARD,border:"none",borderRadius:12,padding:"13px",color:adresse?"#fff":"#8892B0",fontWeight:700,fontSize:14,cursor:adresse?"pointer":"not-allowed"}}>Envoyer 🛵</button>
-                </div>
-              )}
-            </div>
-          )}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            {[{icon:"⚖️",t:"Pesée directe",d:"Tarif calculé devant vous"},{icon:"🛵",t:"Livraison moto",d:"Dépôt & récupération"},{icon:"🏅",t:"Points fidélité",d:"1 pt / 100 FCFA"},{icon:"💳",t:"Mobile Money",d:"Flooz · T-Money"}].map(c=>(
-              <div key={c.t} style={{background:CARD,borderRadius:18,padding:14,border:`1px solid ${BDR}`}}>
-                <div style={{fontSize:22,marginBottom:6}}>{c.icon}</div>
-                <p style={{fontWeight:700,fontSize:12,marginBottom:3}}>{c.t}</p>
-                <p style={{fontSize:11,color:"#8892B0",lineHeight:1.4}}>{c.d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {tab==="fidelite"&&(
-        <ClientFidelite commandes={commandes} rewards={rewards} />
-      )}
-
-      {tab==="friperie"&&(
-        <div style={{padding:"16px 20px 0"}}>
-          <p style={{color:"#8892B0",fontSize:13,marginBottom:14}}>Articles sélectionnés · Lomé, Togo</p>
-          {friperie.length===0&&<div style={{textAlign:"center",padding:24}}><p style={{fontSize:36,marginBottom:8}}>👗</p><p style={{color:"#8892B0",fontSize:14}}>Aucun article disponible.</p></div>}
-          <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
-          {friperie.map(item=>(
-            <div key={item.id} style={{background:CARD,borderRadius:20,border:`1px solid ${BDR}`,overflow:"hidden"}}>
-              {/* Photo */}
-              <div style={{width:"100%",height:200,background:"#0A0F1E",position:"relative",overflow:"hidden"}}>
-                {item.photo
-                  ? <img src={item.photo} alt={item.nom} style={{width:"100%",height:"100%",objectFit:"cover"}} />
-                  : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:72}}>{item.emoji}</div>
-                }
-                <span style={{position:"absolute",top:10,left:10,background:"rgba(6,13,31,0.88)",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:700,color:CYAN}}>{item.etat}</span>
-                <span style={{position:"absolute",top:10,right:10,background:`linear-gradient(135deg,${BLU},${BLU2})`,borderRadius:8,padding:"4px 12px",fontSize:12,fontWeight:700,color:"#fff"}}>{item.taille}</span>
-              </div>
-              <div style={{padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                  <div>
-                    <p style={{fontWeight:700,fontSize:16}}>{item.nom}</p>
-                    <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>Taille {item.taille} · {item.etat}</p>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <p style={{color:CYAN,fontWeight:700,fontSize:22}}>{fmt(item.prix)} F</p>
-                    <p style={{fontSize:10,color:"#8892B0"}}>FCFA</p>
-                  </div>
-                </div>
-                <button onClick={()=>{const msg=`Bonjour JOKER Laverie ! 👋%0A%0AJe suis intéressé(e) par :%0A%0A👗 *${item.nom}*%0A📏 Taille : ${item.taille}%0A✨ État : ${item.etat}%0A💰 Prix : ${item.prix.toLocaleString("fr-FR")} FCFA%0A%0AEst-il encore disponible ?`;window.open(`https://wa.me/22879621085?text=${msg}`,"_blank");}} style={{width:"100%",background:"linear-gradient(135deg,#25D366,#128C7E)",border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                  <span style={{fontSize:20}}>📲</span> Commander via WhatsApp
-                </button>
-              </div>
-            </div>
-          ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 
 // ─── GÉNÉRATION FACTURE WHATSAPP ──────────────────────────
 function buildFacture(c, tarifs) {
@@ -2428,6 +1853,7 @@ function ClientsDB({ commandes }) {
 }
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
+
 function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
@@ -2882,6 +2308,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
 
 
 // ─── ÉCRAN CONNEXION ──────────────────────────────────────
+
 function LoginScreen() {
   const [email,   setEmail]   = useState("");
   const [pw,      setPw]      = useState("");
@@ -2954,8 +2381,8 @@ function LoginScreen() {
 }
 
 // ─── APP ──────────────────────────────────────────────────
+
 export default function App(){
-  // ── Auth Firebase ──────────────────────────────────────
   const [user,      setUser]      = useState(null);
   const [authReady, setAuthReady] = useState(false);
 
@@ -2966,56 +2393,37 @@ export default function App(){
 
   async function handleLogout(){
     await signOut(auth);
-    setUser(null); setScreen("landing"); setGerantAuth(false);
+    setUser(null);
   }
 
-  // ── Firestore collections ──────────────────────────────
-  const [commandes, upsertCmd,     removeCmd,  cmdReady]   = useFireCollection("commandes",  COMMANDES_INIT);
-  const [clients,   upsertClient,  ,           cliReady]   = useFireCollection("clients",    []);
-  const [friperie,  upsertFrip,    removeFrip, fripReady]  = useFireCollection("friperie",   FRIPERIE_INIT);
-  const [livreurs,  upsertLivreur, removeLivreur, livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
-  const [depenses,  upsertDepense, removeDepense]           = useFireCollection("depenses",   []);
+  const [commandes,  upsertCmd,     removeCmd,   cmdReady]  = useFireCollection("commandes",  COMMANDES_INIT);
+  const [friperie,   upsertFrip,    removeFrip,  fripReady] = useFireCollection("friperie",   FRIPERIE_INIT);
+  const [livreurs,   upsertLivreur, removeLivreur,livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
+  const [clients,    upsertClient,  ,            cliReady]  = useFireCollection("clients",    []);
+  const [promos,     upsertPromo,   removePromo, promoReady]= useFireCollection("promos",     []);
+  const [tarifs,     saveTarifs,    tarReady]    = useFireDoc("config","tarifs",    TARIFS_INIT);
+  const [rewards,    saveRewards,   rewReady]    = useFireDoc("config","rewards",   REWARDS_INIT);
+  const [gerantPin,  savePin,       pinReady]    = useFireDoc("config","pin",       "1234");
+  const [adminPw,    saveAdminPw,   pwReady]     = useFireDoc("config","adminPw",   "admin123");
+  const [paiementConfig, savePaiementConfig, pmtReady] = useFireDoc("config","paiements", {flooz:JOKER_FLOOZ_DEFAULT,tmoney:JOKER_TMONEY_DEFAULT});
+  const [statutLaverie,  saveStatutLaverie,  statReady] = useFireDoc("config","statut",    {ouvert:true,message:""});
+  const [objectifJour,   saveObjectifJour,   objReady]  = useFireDoc("config","objectif",  {montant:50000});
+  const [depenses,       upsertDepense,      removeDepense, depReady] = useFireCollection("depenses", []);
 
-  // ── Firestore docs (config) ────────────────────────────
-  const [tarifs,    saveTarifs,    tarifReady]  = useFireDoc("config","tarifs",    TARIFS_INIT);
-  const [statutLaverie, saveStatutLaverie] = useFireDoc("config","statut", {ouvert:true, message:""});
-  const [paiementConfig, savePaiementConfig, paiReady] = useFireDoc("config","paiements", {flooz:JOKER_FLOOZ_DEFAULT, tmoney:JOKER_TMONEY_DEFAULT, livraisonFrais:LIVRAISON_TARIF_DEFAULT});
-  const [rewards,   saveRewards,   rewardReady] = useFireDoc("config","rewards",   REWARDS_INIT);
-  const [gerantPin, savePin,       pinReady]    = useFireDoc("config","pin",       "1234");
-  const [adminPw,   saveAdminPw,   pwReady]     = useFireDoc("config","adminpw",   "joker2026");
-  const [objectifJour, saveObjectifJour]        = useFireDoc("config","objectif",  50000);
+  const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady;
 
-  const allReady = cmdReady&&cliReady&&fripReady&&livReady&&tarifReady&&rewardReady&&pinReady&&pwReady&&paiReady;
-  // Mise à jour des numéros globaux depuis Firebase
-  JOKER_FLOOZ      = paiementConfig?.flooz||JOKER_FLOOZ_DEFAULT;
-  JOKER_TMONEY     = paiementConfig?.tmoney||JOKER_TMONEY_DEFAULT;
-  LIVRAISON_TARIF  = paiementConfig?.livraisonFrais||LIVRAISON_TARIF_DEFAULT;
-
-  // ── Setters synchronisés Firestore ────────────────────
   function setCommandes(fn){
-    const next = typeof fn==="function"?fn(commandes):fn;
-    next.forEach(c=>upsertCmd(c));
-    commandes.forEach(c=>{
-      if(!next.find(u=>u.id===c.id)){
-        removeCmd(c.id);
-        // Garder dans historique client même après suppression
-        const cli=clients.find(cl=>(cl.commandes||[]).find(h=>h.id===c.id));
-        if(cli&&upsertClient){
-          upsertClient({...cli,
-            commandes:(cli.commandes||[]).map(h=>h.id===c.id?{...h,statut:"Supprimée",supprime:true}:h),
-            historique:(cli.historique||[]).map(h=>h.id===c.id?{...h,statut:"Supprimée",supprime:true}:h)
-          });
-        }
-      }
+    const prev = commandes;
+    const next = typeof fn==="function"?fn(prev):fn;
+    next.forEach(c=>{
+      const old = prev.find(p=>p.id===c.id);
+      if(!old || JSON.stringify(old)!==JSON.stringify(c)) upsertCmd(c);
     });
-  }
-  function setClients(fn){
-    const next=typeof fn==="function"?fn(clients):fn;
-    next.forEach(c=>upsertClient({...c,id:c.id||String(Date.now())}));
+    prev.forEach(c=>{ if(!next.find(u=>u.id===c.id)) removeCmd(String(c.id)); });
   }
   function setFriperie(fn){
     const next=typeof fn==="function"?fn(friperie):fn;
-    next.forEach(f=>upsertFrip({...f,id:String(f.id)}));
+    next.forEach(f=>upsertFrip({...f,id:String(f.id||Date.now())}));
     friperie.forEach(f=>{ if(!next.find(u=>String(u.id)===String(f.id))) removeFrip(String(f.id)); });
   }
   function setLivreurs(fn){
@@ -3023,134 +2431,52 @@ export default function App(){
     next.forEach(l=>upsertLivreur({...l,id:l.id||String(Date.now())}));
     livreurs.forEach(l=>{ if(!next.find(u=>String(u.id)===String(l.id))) removeLivreur(String(l.id)); });
   }
-  function setTarifs(fn){  saveTarifs(typeof fn==="function"?fn(tarifs):fn); }
+  function setTarifs(fn){ saveTarifs(typeof fn==="function"?fn(tarifs):fn); }
   function setRewards(fn){ saveRewards(typeof fn==="function"?fn(rewards):fn); }
   function setGerantPin(v){ savePin(v); }
-  function setAdminPw(v){   saveAdminPw(v); }
+  function setAdminPw(v){ saveAdminPw(v); }
+  function setPromos(fn){
+    const next=typeof fn==="function"?fn(promos):fn;
+    next.forEach(p=>upsertPromo({...p,id:String(p.id||Date.now())}));
+    promos.forEach(p=>{ if(!next.find(u=>String(u.id)===String(p.id))) removePromo(String(p.id)); });
+  }
 
-  // Auto-redirect to client space if URL has ?ticket=
-  const _urlTicketApp = new URLSearchParams(window.location.search).get("ticket")||"";
-  const [screen,    setScreen]    = useState(_urlTicketApp ? "client" : "landing");
-  const [gerantAuth,setGerantAuth]= useState(false);
+  if(!authReady) return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:DARK}}>
+      <Logo size={80} style={{margin:"0 auto"}} />
+      <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3,color:BLU2,marginTop:16}}>JOKER LAVERIE</p>
+      <p style={{color:"#8892B0",fontSize:13,marginTop:8}}>Vérification...</p>
+    </div>
+  );
+
+  if(!user) return <LoginScreen />;
+
+  if(!allReady) return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:DARK}}>
+      <Logo size={80} style={{margin:"0 auto"}} />
+      <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3,color:BLU2,marginTop:16}}>JOKER LAVERIE</p>
+      <p style={{color:"#8892B0",fontSize:13,marginTop:8}}>Chargement...</p>
+    </div>
+  );
 
   return (
     <div style={{minHeight:"100vh",background:DARK,fontFamily:"'DM Sans',sans-serif",color:"#F8FAFF",maxWidth:420,margin:"0 auto"}}>
-      {/* Auth pas encore vérifiée */}
-      {!authReady&&(
-        <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
-          <Logo size={80} style={{margin:"0 auto"}} />
-          <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3,color:BLU2}}>JOKER LAVERIE</p>
-          <p style={{color:"#8892B0",fontSize:13}}>Vérification…</p>
-          <div style={{display:"flex",gap:6}}>{[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:BLU2,animation:`pulse 1.2s ease ${i*0.2}s infinite`}} />)}</div>
-        </div>
-      )}
-
-      {/* Non connecté → login gérant seulement */}
-      {authReady&&!user&&screen==="gerant"&&<LoginScreen />}
-
-      {/* Connecté mais données en cours de chargement */}
-      {authReady&&user&&!allReady&&(
-        <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
-          <Logo size={80} style={{margin:"0 auto"}} />
-          <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3,color:BLU2}}>JOKER LAVERIE</p>
-          <p style={{color:"#8892B0",fontSize:13}}>Chargement…</p>
-          <div style={{display:"flex",gap:6}}>{[0,1,2].map(i=><div key={i} style={{width:8,height:8,borderRadius:"50%",background:BLU2,animation:`pulse 1.2s ease ${i*0.2}s infinite`}} />)}</div>
-        </div>
-      )}
-
-      {/* Connecté + données prêtes */}
-      {authReady&&(user&&allReady||!user)&&(
-      <div>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap');
-        *{box-sizing:border-box;margin:0;padding:0;}
-        ::-webkit-scrollbar{display:none;}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
-        @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
-        @keyframes pulse{0%,100%{opacity:0.3;transform:scale(0.8)}50%{opacity:1;transform:scale(1.2)}}
-        input,button,select{font-family:'DM Sans',sans-serif;}
-      `}</style>
-      <div style={{position:"fixed",inset:0,background:"radial-gradient(ellipse at 20% 20%,#1A3EBD18 0%,transparent 50%),radial-gradient(ellipse at 80% 80%,#0D1F6E22 0%,transparent 50%)",pointerEvents:"none",zIndex:0}} />
-      <div style={{position:"relative",zIndex:1}}>
-
-        {screen==="landing"&&(
-          <div style={{padding:"64px 24px",textAlign:"center",animation:"fadeIn 0.5s ease"}}>
-            <Logo size={120} style={{margin:"0 auto 20px"}} />
-            <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:36,letterSpacing:4}}>JOKER</h1>
-            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:BLU2,letterSpacing:3}}>LAVERIE & SERVICE</p>
-            <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,marginTop:6,marginBottom:6}}>PROPRETÉ · QUALITÉ · FIABILITÉ</p>
-            <p style={{color:`${BLU2}60`,fontSize:12,marginBottom:8}}>Lomé, Togo</p>
-            {/* Message d'accueil selon l'heure */}
-            <p style={{color:CYAN,fontSize:13,fontWeight:600,marginBottom:32,animation:"fadeIn 0.8s ease"}}>
-              {(()=>{const h=new Date().getHours();return h<12?"🌅 Bonjour ! Bienvenue chez JOKER":h<18?"☀️ Bon après-midi ! Bienvenue chez JOKER":"🌙 Bonsoir ! Bienvenue chez JOKER";})()}
-            </p>
-            <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <button onClick={()=>setScreen("gerant-pin")} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:20,padding:"20px",color:"#fff",fontWeight:700,fontSize:17,cursor:"pointer",boxShadow:"0 8px 32px rgba(26,62,189,0.5)"}}>👨‍💼 Espace Gérant</button>
-              <button onClick={()=>setScreen("client")} style={{background:CARD,border:`1px solid ${BDR}`,borderRadius:20,padding:"20px",color:"#F8FAFF",fontWeight:700,fontSize:17,cursor:"pointer"}}>👤 Espace Client</button>
-              {statutLaverie&&!statutLaverie.ouvert&&(
-                <div style={{background:"#3B0D0D",borderRadius:16,padding:"14px 16px",border:"1px solid #FF444440",marginTop:4}}>
-                  <p style={{color:"#FF6B6B",fontWeight:700,fontSize:14,marginBottom:4}}>🔴 Laverie actuellement fermée</p>
-                  <p style={{color:"#8892B0",fontSize:12}}>{statutLaverie.message||"Revenez bientôt !"}</p>
-                </div>
-              )}
-            </div>
-            {/* Horaires */}
-            <div style={{marginTop:28,background:CARD,borderRadius:16,padding:"14px 20px",border:`1px solid ${BDR}`,textAlign:"left"}}>
-              <p style={{fontWeight:700,fontSize:12,color:BLU2,marginBottom:8,letterSpacing:1}}>🕐 HORAIRES D&apos;OUVERTURE</p>
-              {[["Lun – Sam","7h00 – 20h00"],["Dimanche","13h00 – 20h00"]].map(([j,h])=>(
-                <div key={j} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",borderBottom:`1px solid ${BDR}`}}>
-                  <span style={{fontSize:12,color:"#8892B0"}}>{j}</span>
-                  <span style={{fontSize:12,fontWeight:700,color:"#F8FAFF"}}>{h}</span>
-                </div>
-              ))}
-              <p style={{fontSize:11,color:"#8892B0",marginTop:8,textAlign:"center"}}>📍 Agoe Cacaveli, 2ème von après Batir, Lomé</p>
-            </div>
-            <p style={{color:`${BLU2}50`,fontSize:11,marginTop:16}}>Flooz · T-Money · Espèces · 🛵 Livraison</p>
-          </div>
-        )}
-
-        {screen==="gerant-pin"&&(
-          <div>
-            <button onClick={()=>setScreen("landing")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:13}}>← Retour</button>
-            <PinScreen onSuccess={()=>{setGerantAuth(true);setScreen("gerant");}} correctPin={gerantPin} />
-          </div>
-        )}
-
-        {screen==="gerant"&&gerantAuth&&(
-          <GerantDashboard
-            commandes={commandes}   setCommandes={setCommandes}   upsertCmd={upsertCmd}   removeCmd={removeCmd}
-            clients={clients}       setClients={setClients}       upsertClient={upsertClient}
-            friperie={friperie}     setFriperie={setFriperie}
-            tarifs={tarifs}         setTarifs={setTarifs}
-            rewards={rewards}       setRewards={setRewards}
-            livreurs={livreurs}     setLivreurs={setLivreurs}
-            gerantPin={gerantPin}   setGerantPin={setGerantPin}
-            adminPw={adminPw}       setAdminPw={setAdminPw}
-            paiementConfig={paiementConfig} savePaiementConfig={savePaiementConfig}
-            statutLaverie={statutLaverie} saveStatutLaverie={saveStatutLaverie}
-            depenses={depenses}     upsertDepense={upsertDepense}   removeDepense={removeDepense}
-            objectifJour={objectifJour}     saveObjectifJour={saveObjectifJour}
-            onLogout={handleLogout}
-          />
-        )}
-
-        {screen==="client"&&(
-          <div>
-            <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${BDR}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <button onClick={()=>setScreen("landing")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:13}}>← Accueil</button>
-              <Logo size={30} />
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <button onClick={()=>window.location.reload()} title="Actualiser" style={{background:"none",border:`1px solid ${BDR}`,borderRadius:8,color:CYAN,cursor:"pointer",fontSize:16,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>🔄</button>
-                <span style={{fontSize:12,fontWeight:700,color:CYAN}}>CLIENT</span>
-              </div>
-            </div>
-            <ClientSpace commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} upsertClient={upsertClient} clients={clients} friperie={friperie} rewards={rewards} tarifs={tarifs} />
-          </div>
-        )}
-      </div>
-      </div>
-      )}
+      <GerantDashboard
+        commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd}
+        upsertClient={upsertClient} clients={clients}
+        friperie={friperie} setFriperie={setFriperie}
+        tarifs={tarifs} setTarifs={setTarifs}
+        rewards={rewards} setRewards={setRewards}
+        livreurs={livreurs} setLivreurs={setLivreurs}
+        promos={promos} setPromos={setPromos}
+        paiementConfig={paiementConfig} savePaiementConfig={savePaiementConfig}
+        statutLaverie={statutLaverie} saveStatutLaverie={saveStatutLaverie}
+        depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense}
+        objectifJour={objectifJour} saveObjectifJour={saveObjectifJour}
+        gerantPin={gerantPin} setGerantPin={setGerantPin}
+        adminPw={adminPw} setAdminPw={setAdminPw}
+        onLogout={handleLogout}
+      />
     </div>
   );
 }
