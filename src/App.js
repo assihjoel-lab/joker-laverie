@@ -1210,24 +1210,179 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
 }
 
 // ─── FIDÉLITÉ ─────────────────────────────────────────────
-function Fidelite({ clients,setClients,rewards }){
+function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upsertCmd,rewards }){
   const [search,setSearch]=useState("");
   const [sel,setSel]=useState(null);
   const [addPts,setAddPts]=useState("");
   const [msg,setMsg]=useState("");
-  function flash(m){setMsg(m);setTimeout(()=>setMsg(""),2000);}
-  const filtered=clients.filter(c=>c.nom.toLowerCase().includes(search.toLowerCase())||c.tel.includes(search));
+  const [confirmReward,setConfirmReward]=useState(null); // reward en attente de confirmation
+  function flash(m,ok=true){setMsg({t:m,ok});setTimeout(()=>setMsg(""),3000);}
+  const filtered=clients.filter(c=>c.nom.toLowerCase().includes(search.toLowerCase())||(c.tel&&c.tel.includes(search)));
   const client=clients.find(c=>c.id===sel);
+
   function ajouterPts(){
     const p=parseInt(addPts);if(!p||p<=0)return;
-    setClients(prev=>prev.map(c=>c.id!==sel?c:{...c,points:c.points+p,historique:[{date:todayStr(),pts:p,desc:"Ajout manuel"},...(c.historique||[])]}));
-    setAddPts(""); flash(`✅ +${p} pts ajoutés !`);
+    const updated={...client,points:(client.points||0)+p,historique:[{date:todayStr(),pts:p,desc:"Ajout manuel"},...(client.historique||[])]};
+    setClients(prev=>prev.map(c=>c.id!==sel?c:updated));
+    if(upsertClient) upsertClient(updated);
+    setAddPts(""); flash(`✅ +${p} pts ajoutés à ${client.nom} !`);
   }
-  function accorderReward(r){
-    if(!client||client.points<r.pts)return;
-    setClients(prev=>prev.map(c=>c.id!==sel?c:{...c,points:c.points-r.pts,historique:[{date:todayStr(),pts:-r.pts,desc:"Récompense: "+r.label},...(c.historique||[])]}));
-    flash(`✅ "${r.label}" accordée !`);
+
+  function appliquerReward(r){
+    if(!client||client.points<r.pts) return;
+    // 1. Déduire les points du client
+    const newPts=(client.points||0)-r.pts;
+    const hist=[{date:todayStr(),pts:-r.pts,desc:"Récompense: "+r.label},...(client.historique||[])];
+    const updatedClient={...client,points:newPts,historique:hist,
+      recompensesUtilisees:[{id:r.id,label:r.label,date:todayStr(),pts:r.pts},...(client.recompensesUtilisees||[])]};
+    setClients(prev=>prev.map(c=>c.id!==sel?c:updatedClient));
+    if(upsertClient) upsertClient(updatedClient);
+
+    // 2. Appliquer sur la dernière commande En cours ou Prêt du client
+    const cmdActive=commandes.find(c=>(c.client.toLowerCase()===client.nom.toLowerCase()||(c.tel&&c.tel===client.tel))&&(c.statut==="En cours"||c.statut==="Prêt"));
+    if(cmdActive){
+      let newTotal=cmdActive.total;
+      if(r.type==="remise"&&r.valeur){
+        newTotal=Math.round(cmdActive.total*(1-r.valeur/100));
+      } else if(r.type==="livraison"){
+        newTotal=Math.max(0,cmdActive.total-(cmdActive.fraisLiv||0));
+      }
+      const updatedCmd={...cmdActive,total:newTotal,recompenseAppliquee:r.label,
+        note:(cmdActive.note||"")+(cmdActive.note?" · ":"")+"Récompense: "+r.label};
+      setCommandes(prev=>prev.map(c=>c.id!==cmdActive.id?c:updatedCmd));
+      if(upsertCmd) upsertCmd(updatedCmd);
+    }
+
+    // 3. Envoyer WhatsApp si numéro disponible
+    if(client.tel&&client.tel!=="—"){
+      setTimeout(()=>sendWhatsApp(client.tel,
+        "🃏 *JOKER Laverie*\n\n🎉 Félicitations "+client.nom+" !\n\nVotre récompense a été appliquée :\n\n"+r.emoji+" *"+r.label+"*\n📝 "+r.desc+"\n\n🏅 Points restants : *"+newPts+" pts*\n\nMerci de votre fidélité ! 🙏"
+      ),300);
+    }
+
+    setConfirmReward(null);
+    flash("🎉 \""+r.label+"\" accordée à "+client.nom+" !"+(client.tel&&client.tel!=="—"?" · WhatsApp envoyé":""));
   }
+
+  // Alertes — clients proches d'une récompense
+  const alertes=clients.filter(c=>{
+    return rewards.some(r=>c.points>=r.pts);
+  }).sort((a,b)=>b.points-a.points).slice(0,5);
+
+  return (
+    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Fidélité 🏅</h2>
+
+      {/* Message flash */}
+      {msg&&<div style={{background:msg.ok?"#0D3B2E":"#1A0A0A",borderRadius:12,padding:"12px 16px",marginBottom:14,border:`1px solid ${msg.ok?CYAN:"#FF6B6B"}40`,animation:"fadeIn 0.2s ease"}}><p style={{color:msg.ok?CYAN:"#FF6B6B",fontWeight:700}}>{msg.t}</p></div>}
+
+      {/* Alertes récompenses disponibles */}
+      {alertes.length>0&&!sel&&(
+        <div style={{background:"#1A0D3D",borderRadius:18,padding:16,marginBottom:16,border:"1px solid #A855F740"}}>
+          <p style={{fontWeight:700,fontSize:13,color:"#A855F7",marginBottom:10}}>🔔 Clients éligibles à une récompense</p>
+          {alertes.map(c=>{
+            const lv=getLevel(c.points);
+            const rwds=rewards.filter(r=>c.points>=r.pts);
+            return (
+              <div key={c.id} onClick={()=>setSel(c.id)} style={{display:"flex",alignItems:"center",gap:10,background:CARD,borderRadius:12,padding:"10px 12px",marginBottom:8,cursor:"pointer",border:`1px solid ${lv.color}30`}}>
+                <span style={{fontSize:18}}>{lv.label==="Bronze"?"🥉":lv.label==="Silver"?"🥈":lv.label==="Gold"?"🥇":"💎"}</span>
+                <div style={{flex:1}}>
+                  <p style={{fontWeight:700,fontSize:13}}>{c.nom}</p>
+                  <p style={{fontSize:11,color:"#A855F7"}}>{rwds.map(r=>r.emoji+" "+r.label).join(" · ")}</p>
+                </div>
+                <p style={{color:lv.color,fontWeight:700,fontSize:14}}>{c.points} pts</p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal confirmation récompense */}
+      {confirmReward&&client&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:CARD,borderRadius:24,padding:24,width:"100%",maxWidth:340,border:`2px solid ${confirmReward.color}50`,animation:"fadeIn 0.2s ease"}}>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2,marginBottom:4}}>Accorder la récompense ?</p>
+            <div style={{background:DARK,borderRadius:16,padding:16,marginBottom:16,textAlign:"center",border:`1px solid ${confirmReward.color}30`}}>
+              <p style={{fontSize:36,marginBottom:6}}>{confirmReward.emoji}</p>
+              <p style={{fontWeight:700,fontSize:16,color:confirmReward.color}}>{confirmReward.label}</p>
+              <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>{confirmReward.desc}</p>
+              <p style={{fontSize:12,color:"#FF6B6B",fontWeight:700,marginTop:8}}>-{confirmReward.pts} pts · {client.nom} ({client.points} → {client.points-confirmReward.pts} pts)</p>
+            </div>
+            {confirmReward.type==="remise"&&confirmReward.valeur&&(
+              <p style={{color:"#FFB800",fontSize:12,marginBottom:12,textAlign:"center"}}>💰 -{confirmReward.valeur}% sur la prochaine commande active</p>
+            )}
+            {client.tel&&client.tel!=="—"&&<p style={{color:"#25D366",fontSize:12,marginBottom:12,textAlign:"center"}}>💬 Un WhatsApp sera envoyé à {client.nom}</p>}
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmReward(null)} style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px",color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Annuler</button>
+              <button onClick={()=>appliquerReward(confirmReward)} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,cursor:"pointer"}}>✅ Confirmer</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <input value={search} onChange={e=>{setSearch(e.target.value);setSel(null);}} placeholder="🔍 Rechercher un client…" style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}} />
+      {filtered.map(c=>{
+        const lv=getLevel(c.points);
+        const isOpen=sel===c.id;
+        return (
+          <div key={c.id}>
+            <div onClick={()=>setSel(isOpen?null:c.id)} style={{background:isOpen?"#0D1F6E":CARD,borderRadius:isOpen?"18px 18px 0 0":18,padding:16,marginBottom:isOpen?0:10,border:`1px solid ${isOpen?BLU2:BDR}`,cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:`${lv.color}22`,border:`2px solid ${lv.color}60`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue',cursive",fontSize:18,color:lv.color}}>{lv.label[0]}</div>
+                  <div><p style={{fontWeight:700,fontSize:15}}>{c.nom}</p><p style={{fontSize:12,color:"#8892B0"}}>{c.tel}</p></div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:lv.color}}>{c.points}</p>
+                  <p style={{fontSize:10,color:lv.color,fontWeight:700}}>{lv.label}</p>
+                </div>
+              </div>
+            </div>
+            {isOpen&&client&&(
+              <div style={{background:"#0A1628",borderRadius:"0 0 18px 18px",padding:16,border:`1px solid ${BLU2}`,borderTop:"none",marginBottom:10,animation:"fadeIn 0.3s ease"}}>
+                <STitle text="Ajouter des points" />
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  {[10,20,50,100].map(p=><button key={p} onClick={()=>setAddPts(String(p))} style={{flex:1,background:addPts===String(p)?`${BLU}40`:DARK,border:`1px solid ${addPts===String(p)?BLU2:BDR}`,borderRadius:10,padding:"10px 4px",color:addPts===String(p)?BLU2:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>+{p}</button>)}
+                </div>
+                <div style={{display:"flex",gap:10,marginBottom:14}}>
+                  <input type="number" value={addPts} onChange={e=>setAddPts(e.target.value)} placeholder="Nb pts" style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:CYAN,fontSize:18,fontWeight:700,outline:"none",textAlign:"center"}} />
+                  <button onClick={ajouterPts} disabled={!addPts||parseInt(addPts)<=0} style={{flex:1,background:addPts?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"11px",color:addPts?"#fff":"#8892B0",fontWeight:700,cursor:addPts?"pointer":"not-allowed"}}>Ajouter</button>
+                </div>
+
+                <STitle text="Accorder une récompense" />
+                {rewards.map(r=>{
+                  const can=client.points>=r.pts;
+                  return (
+                    <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${can?r.color+"30":BDR}`,opacity:can?1:0.5}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontSize:20}}>{r.emoji}</span>
+                        <div>
+                          <p style={{fontWeight:700,fontSize:13}}>{r.label}</p>
+                          <p style={{fontSize:11,color:r.color}}>{r.pts} pts requis</p>
+                          {!can&&<p style={{fontSize:10,color:"#8892B0"}}>{r.pts-client.points} pts manquants</p>}
+                        </div>
+                      </div>
+                      <button onClick={()=>can&&setConfirmReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
+                    </div>
+                  );
+                })}
+
+                <STitle text="Historique" />
+                {(client.historique||[]).length===0&&<p style={{color:"#8892B0",fontSize:13}}>Aucun historique</p>}
+                {(client.historique||[]).slice(0,8).map((h,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                    <div><p style={{fontSize:13,fontWeight:600}}>{h.desc}</p><p style={{fontSize:11,color:"#8892B0"}}>{h.date}</p></div>
+                    <span style={{color:h.pts>0?CYAN:"#FF6B6B",fontWeight:700,fontSize:14}}>{h.pts>0?"+":""}{h.pts} pts</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Fidélité 🏅</h2>
@@ -2159,7 +2314,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionTarifs tarifs={tarifs} setTarifs={setTarifs} /></div>
       )}
       {tab==="fidelite"&&(
-        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Fidelite clients={clients} setClients={setClients} rewards={rewards} /></div>
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Fidelite clients={clients} setClients={setClients} upsertClient={upsertClient} commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} rewards={rewards} /></div>
       )}
       {tab==="recompenses"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionRecompenses rewards={rewards} setRewards={setRewards} /></div>
@@ -2298,6 +2453,10 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
               const ram=commandes.filter(c=>c.typeRamassage&&c.livraisonStatut==="pending").length;
               const total=pret+ram;
               return total>0&&<span style={{position:"absolute",top:-4,right:-4,background:ram>0?"#FF6B35":CYAN,color:"#0A0F1E",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{total}</span>;
+            })()}
+            {tb.id==="plus"&&(()=>{
+              const eligibles=clients.filter(c=>rewards.some(r=>c.points>=r.pts)).length;
+              return eligibles>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#FFB800",color:"#0A0F1E",borderRadius:99,fontSize:9,fontWeight:700,padding:"1px 5px",minWidth:14,textAlign:"center"}}>{eligibles}</span>;
             })()}
           </button>
         ))}
