@@ -65,7 +65,10 @@ const LEVEL_SEUILS = [
 function genId()  { return "JK-"+String(Math.floor(Math.random()*900)+100); }
 function fmt(n)   { return Number(n).toLocaleString("fr-FR"); }
 function getLevel(pts) { return LEVEL_SEUILS.find(l=>pts>=l.min&&pts<=l.max)||LEVEL_SEUILS[0]; }
-function calcTotal(poids,tarif,livraison,fraisLivOverride){ return Math.round(parseFloat(poids)*tarif)+(livraison?(fraisLivOverride||LIVRAISON_TARIF_DEFAULT):0); }
+function calcTotal(poids,tarif,livraison,fraisLivOverride,type="kg",qte=1){
+  const base = type==="unite" ? Math.round(tarif*parseInt(qte||1)) : Math.round(parseFloat(poids)*tarif);
+  return base+(livraison?(fraisLivOverride||LIVRAISON_TARIF_DEFAULT):0);
+}
 function todayStr(){ return new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"short"}); }
 
 function sendWhatsApp(tel,msg){
@@ -157,6 +160,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [tel,setTel]=useState("");
   const [poids,setPoids]=useState("");
   const [tarif,setTarif]=useState(tarifs[0]||TARIFS_INIT[0]);
+  const [qte,setQte]=useState(1);
   const [paiement,setPaiement]=useState(PAIEMENTS[0]);
   const [livraison,setLiv]=useState(null);
   const [adresse,setAdresse]=useState("");
@@ -176,7 +180,10 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   ];
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
-  const sousTotal=poids?Math.round(parseFloat(poids)*tarif.prix):0;
+  const isKg=(tarif?.type||"kg")==="kg";
+  const sousTotal = isKg
+    ? (poids ? Math.round(parseFloat(poids)*tarif.prix) : 0)
+    : Math.round(parseInt(qte||1)*tarif.prix);
   const frais=livraison?fraisLiv:0;
   const remiseMontant=Math.round((sousTotal+frais)*remisePct/100);
   const total=sousTotal+frais-remiseMontant;
@@ -189,8 +196,10 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const heureRetrait=new Date(Date.now()+est.duree*3600000);
     const heureStr=estimation==="demain"?"demain matin vers 8h":estimation==="2j"?"après-demain matin":
       heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd&apos;hui";
-    const c={id:genId(),client:nom,tel,poids:parseFloat(poids),poidsStatut:isDepot?"estimated":"confirmed",
-      tarifId:tarif.id,tarif:tarif.prix,total,statut:"En cours",date:todayStr(),
+    const c={id:genId(),client:nom,tel,
+      poids:isKg?(parseFloat(poids)||0):0, qte:isKg?1:parseInt(qte||1),
+      poidsStatut:isKg?(isDepot?"estimated":"confirmed"):"confirmed",
+      tarifId:tarif.id,tarif:tarif.prix,tarifType:tarif.type||"kg",total,statut:"En cours",date:todayStr(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,remise:remisePct,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,
       estimation:est.id,heureRetrait:heureRetrait.toISOString(),dureeEstimee:est.label};
@@ -212,6 +221,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n⚖️ '+c.poids+' kg\n💰 '+fmt(total)+' FCFA\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
       ),400);
     }
+    setQte(1);
     setTicket(c);
   }
 
@@ -251,16 +261,40 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       <Inp label="Téléphone" value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00" />
       <div style={{marginBottom:12}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Service *</label>
-        {tarifs.map(tr=>(
-          <div key={tr.id} onClick={()=>setTarif(tr)} style={{background:tarif.id===tr.id?"#0D1F6E":CARD,border:`1px solid ${tarif.id===tr.id?BLU2:BDR}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",marginBottom:7}}>
-            <span style={{fontWeight:600,fontSize:14}}>{tr.label}</span>
-            <span style={{color:CYAN,fontWeight:700}}>{fmt(tr.prix)} F/kg</span>
-          </div>
-        ))}
+        {tarifs.map(tr=>{
+          const trKg=(tr.type||"kg")==="kg";
+          const sel=tarif.id===tr.id;
+          return (
+            <div key={tr.id} onClick={()=>{setTarif(tr);setQte(1);setPoids("");}}
+              style={{background:sel?(trKg?"#0D1F6E":"#1A0D3D"):CARD,border:`2px solid ${sel?(trKg?BLU2:"#A855F7"):BDR}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span>{trKg?"⚖️":"👕"}</span>
+                <span style={{fontWeight:600,fontSize:14,color:sel?"#F8FAFF":"#8892B0"}}>{tr.label}</span>
+              </div>
+              <span style={{color:trKg?CYAN:"#A855F7",fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{trKg?"kg":"pièce"}</span>
+            </div>
+          );
+        })}
       </div>
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Poids (kg) * {isDepot&&<span style={{color:"#FFB800",fontSize:10}}>⚖️ Estimé</span>}</label>
-        <input type="number" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="3.5" style={{width:"100%",background:CARD,border:`1px solid ${isDepot?"rgba(255,184,0,0.4)":BDR}`,borderRadius:13,padding:"13px",color:isDepot?"#FFB800":CYAN,fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
+        {isKg ? (
+          <>
+            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>⚖️ Poids (kg) * {isDepot&&<span style={{color:"#FFB800",fontSize:10}}>Estimé</span>}</label>
+            <input type="number" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="3.5"
+              style={{width:"100%",background:CARD,border:`1px solid ${isDepot?"rgba(255,184,0,0.4)":BDR}`,borderRadius:13,padding:"13px",color:isDepot?"#FFB800":CYAN,fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
+          </>
+        ) : (
+          <>
+            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>👕 Nombre de pièces *</label>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={()=>setQte(q=>Math.max(1,q-1))} style={{width:50,height:50,borderRadius:12,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:26,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
+              <input type="number" min="1" value={qte} onChange={e=>setQte(Math.max(1,parseInt(e.target.value)||1))}
+                style={{flex:1,background:CARD,border:"2px solid #A855F7",borderRadius:13,padding:"13px",color:"#A855F7",fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
+              <button onClick={()=>setQte(q=>q+1)} style={{width:50,height:50,borderRadius:12,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:26,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+            </div>
+            <p style={{fontSize:11,color:"#8892B0",marginTop:6,textAlign:"center"}}>{qte} pièce{qte>1?"s":""} × {fmt(tarif.prix)} F = <strong style={{color:"#A855F7"}}>{fmt(sousTotal)} F</strong></p>
+          </>
+        )}
       </div>
       <div style={{marginBottom:12}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Livraison 🛵 (+{fmt(LIVRAISON_TARIF)} FCFA)</label>
@@ -299,7 +333,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       </div>
       {poids&&(
         <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:18,padding:18,marginBottom:16,border:`1px solid ${isDepot?"rgba(255,184,0,0.3)":"rgba(0,194,255,0.3)"}`}}>
-          {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>Lavage</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(LIVRAISON_TARIF)} FCFA</span></div></>}
+          {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>{isKg?`Lavage (${poids}kg × ${fmt(tarif.prix)}F)`:`${tarif.label} (${qte} pièce${qte>1?"s":""})`}</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(LIVRAISON_TARIF)} FCFA</span></div></>}
           {remiseMontant>0&&(
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <span style={{color:"#4ADE80",fontSize:13}}>🎁 Réduction ({remisePct}%)</span>
@@ -329,7 +363,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         </p>
       </div>
 
-      <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||!poids} />
+      <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||(isKg?!poids:qte<1)} />
     </div>
   );
 }
@@ -695,35 +729,65 @@ function GestionPaiements({ paiementConfig, savePaiementConfig }){
 
 function GestionTarifs({ tarifs,setTarifs }){
   const [newLabel,setNewLabel]=useState("");
-  const [newPrix,setNewPrix]=useState("");
+  const [newPrix, setNewPrix] =useState("");
+  const [newType, setNewType] =useState("kg");
   const [msg,setMsg]=useState("");
   function flash(m){setMsg(m);setTimeout(()=>setMsg(""),2000);}
   function updatePrix(id,val){setTarifs(p=>p.map(t=>t.id===id?{...t,prix:parseInt(val)||t.prix}:t));}
   function updateLabel(id,val){setTarifs(p=>p.map(t=>t.id===id?{...t,label:val}:t));}
-  function addTarif(){if(!newLabel||!newPrix)return;setTarifs(p=>[...p,{id:Date.now(),label:newLabel,prix:parseInt(newPrix)}]);setNewLabel("");setNewPrix("");flash("✅ Tarif ajouté !");}
+  function updateType(id,type){setTarifs(p=>p.map(t=>t.id===id?{...t,type}:t));}
+  function addTarif(){
+    if(!newLabel||!newPrix)return;
+    setTarifs(p=>[...p,{id:Date.now(),label:newLabel,prix:parseInt(newPrix),type:newType}]);
+    setNewLabel("");setNewPrix("");setNewType("kg");flash("✅ Tarif ajouté !");
+  }
   function removeTarif(id){setTarifs(p=>p.filter(t=>t.id!==id));}
+  const typeBtn=(active)=>({flex:1,background:active?`${BLU}40`:DARK,border:`2px solid ${active?BLU2:BDR}`,borderRadius:10,padding:"9px 4px",color:active?BLU2:"#8892B0",fontWeight:700,fontSize:12,cursor:"pointer"});
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Tarifs</h2>
       {msg&&<div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 16px",marginBottom:14,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700}}>{msg}</p></div>}
-      {tarifs.map(t=>(
-        <div key={t.id} style={{background:CARD,borderRadius:18,padding:16,marginBottom:12,border:`1px solid ${BDR}`}}>
-          <div style={{display:"flex",gap:10,marginBottom:10}}>
-            <input value={t.label} onChange={e=>updateLabel(t.id,e.target.value)} style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:14,outline:"none"}} />
-            <button onClick={()=>removeTarif(t.id)} style={{background:"none",border:"none",color:"#FF4444",fontSize:18,cursor:"pointer"}}>🗑️</button>
+      {tarifs.map(t=>{
+        const isKg=(t.type||"kg")==="kg";
+        return (
+          <div key={t.id} style={{background:CARD,borderRadius:18,padding:16,marginBottom:12,border:`1px solid ${isKg?BDR:"rgba(168,85,247,0.25)"}`}}>
+            <div style={{display:"flex",gap:10,marginBottom:10}}>
+              <input value={t.label} onChange={e=>updateLabel(t.id,e.target.value)}
+                style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:14,outline:"none"}} />
+              <button onClick={()=>removeTarif(t.id)} style={{background:"none",border:"none",color:"#FF4444",fontSize:18,cursor:"pointer"}}>🗑️</button>
+            </div>
+            <div style={{display:"flex",gap:8,marginBottom:10}}>
+              <button onClick={()=>updateType(t.id,"kg")}    style={typeBtn(isKg)}>⚖️ Au kilo</button>
+              <button onClick={()=>updateType(t.id,"unite")} style={typeBtn(!isKg)}>👕 À l'unité</button>
+            </div>
+            <span style={{fontSize:11,background:isKg?`${CYAN}18`:"rgba(168,85,247,0.15)",color:isKg?CYAN:"#A855F7",borderRadius:99,padding:"3px 12px",fontWeight:700,display:"inline-block",marginBottom:10}}>
+              {isKg?"Prix par kg":"Prix fixe / vêtement"}
+            </span>
+            <input type="number" value={t.prix} onChange={e=>updatePrix(t.id,e.target.value)}
+              style={{width:"100%",background:DARK,border:`1px solid ${isKg?BLU2:"#A855F7"}`,borderRadius:10,padding:"12px",color:isKg?CYAN:"#A855F7",fontSize:22,fontWeight:700,outline:"none",textAlign:"center"}} />
+            <p style={{textAlign:"center",fontSize:11,color:"#8892B0",marginTop:6}}>{isKg?`${fmt(t.prix)} FCFA / kg`:`${fmt(t.prix)} FCFA / pièce`}</p>
+            <div style={{display:"flex",gap:8,marginTop:8}}>
+              {[-100,-50,+50,+100].map(d=>(
+                <button key={d} onClick={()=>updatePrix(t.id,t.prix+d)}
+                  style={{flex:1,background:d<0?"#1A0A0A":"#0D1F6E",border:`1px solid ${d<0?"#FF444330":BLU2+"40"}`,borderRadius:10,padding:"8px 4px",color:d<0?"#FF6B6B":CYAN,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  {d>0?"+":""}{d}
+                </button>
+              ))}
+            </div>
           </div>
-          <input type="number" value={t.prix} onChange={e=>updatePrix(t.id,e.target.value)} style={{width:"100%",background:DARK,border:`1px solid ${BLU2}`,borderRadius:10,padding:"12px",color:CYAN,fontSize:22,fontWeight:700,outline:"none",textAlign:"center"}} />
-          <div style={{display:"flex",gap:8,marginTop:10}}>
-            {[-100,-50,+50,+100].map(d=>(
-              <button key={d} onClick={()=>updatePrix(t.id,t.prix+d)} style={{flex:1,background:d<0?"#1A0A0A":"#0D1F6E",border:`1px solid ${d<0?"#FF444330":BLU2+"40"}`,borderRadius:10,padding:"8px 4px",color:d<0?"#FF6B6B":CYAN,fontSize:12,fontWeight:700,cursor:"pointer"}}>{d>0?"+":""}{d}</button>
-            ))}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       <STitle text="Ajouter un tarif" />
       <div style={{background:CARD,borderRadius:18,padding:16,border:`1px solid ${BDR}`,marginBottom:14}}>
-        <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Nom du service" style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"12px 14px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
-        <input type="number" value={newPrix} onChange={e=>setNewPrix(e.target.value)} placeholder="Prix FCFA/kg" style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"12px",color:CYAN,fontSize:18,fontWeight:700,outline:"none",textAlign:"center",marginBottom:12}} />
+        <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Nom du service"
+          style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"12px 14px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <button onClick={()=>setNewType("kg")}    style={typeBtn(newType==="kg")}>⚖️ Au kilo</button>
+          <button onClick={()=>setNewType("unite")} style={typeBtn(newType==="unite")}>👕 À l'unité</button>
+        </div>
+        <input type="number" value={newPrix} onChange={e=>setNewPrix(e.target.value)}
+          placeholder={newType==="kg"?"Prix FCFA/kg":"Prix FCFA/pièce"}
+          style={{width:"100%",background:DARK,border:`1px solid ${newType==="kg"?BLU2:"#A855F7"}`,borderRadius:12,padding:"12px",color:newType==="kg"?CYAN:"#A855F7",fontSize:18,fontWeight:700,outline:"none",textAlign:"center",marginBottom:12}} />
         <Btn label="➕ Ajouter" onClick={addTarif} disabled={!newLabel||!newPrix} />
       </div>
     </div>
@@ -1382,7 +1446,6 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
       })}
     </div>
   );
-}
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Fidélité 🏅</h2>
