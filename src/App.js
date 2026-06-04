@@ -2045,7 +2045,7 @@ function ClientsDB({ commandes }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout }){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout,promos,setPromos,setClients,removeClient,removeCmd}){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
@@ -2597,7 +2597,12 @@ export default function App(){
   const [commandes,  upsertCmd,     removeCmd,   cmdReady]  = useFireCollection("commandes",  COMMANDES_INIT);
   const [friperie,   upsertFrip,    removeFrip,  fripReady] = useFireCollection("friperie",   FRIPERIE_INIT);
   const [livreurs,   upsertLivreur, removeLivreur,livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
-  const [clients,    upsertClient,  ,            cliReady]  = useFireCollection("clients",    []);
+  const [clients,    upsertClient,  removeClient, cliReady]  = useFireCollection("clients",    []);
+  function setClients(fn){
+    const next=typeof fn==="function"?fn(clients):fn;
+    next.forEach(c=>upsertClient(c));
+    clients.forEach(c=>{ if(!next.find(u=>u.id===c.id)) removeClient(String(c.id)); });
+  }
   const [promos,     upsertPromo,   removePromo, promoReady]= useFireCollection("promos",     []);
   const [tarifs,     saveTarifs,    tarReady]    = useFireDoc("config","tarifs",    TARIFS_INIT);
   const [rewards,    saveRewards,   rewReady]    = useFireDoc("config","rewards",   REWARDS_INIT);
@@ -2660,8 +2665,8 @@ export default function App(){
   return (
     <div style={{minHeight:"100vh",background:DARK,fontFamily:"'DM Sans',sans-serif",color:"#F8FAFF",maxWidth:420,margin:"0 auto"}}>
       <GerantDashboard
-        commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd}
-        upsertClient={upsertClient} clients={clients}
+        commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} removeCmd={removeCmd}
+        upsertClient={upsertClient} clients={clients} setClients={setClients} removeClient={removeClient}
         friperie={friperie} setFriperie={setFriperie}
         tarifs={tarifs} setTarifs={setTarifs}
         rewards={rewards} setRewards={setRewards}
