@@ -158,9 +158,7 @@ function PinScreen({ onSuccess, correctPin }){
 function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,onBack,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
-  const [poids,setPoids]=useState("");
-  const [tarif,setTarif]=useState(tarifs[0]||TARIFS_INIT[0]);
-  const [qte,setQte]=useState(1);
+  const [panier,setPanier]=useState([]);  // [{tarifId,poids,qte,isKg}]
   const [paiement,setPaiement]=useState(PAIEMENTS[0]);
   const [livraison,setLiv]=useState(null);
   const [adresse,setAdresse]=useState("");
@@ -180,48 +178,61 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   ];
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
-  const isKg=(tarif?.type||"kg")==="kg";
-  const sousTotal = isKg
-    ? (poids ? Math.round(parseFloat(poids)*tarif.prix) : 0)
-    : Math.round(parseInt(qte||1)*tarif.prix);
+  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
+
+  function addService(tid){
+    const t=tarifsDisp.find(x=>x.id===tid); if(!t) return;
+    const isKg=(t.type||"kg")==="kg";
+    setPanier(p=>[...p,{tarifId:tid,poids:"",qte:1,isKg}]);
+  }
+  function removeService(idx){ setPanier(p=>p.filter((_,i)=>i!==idx)); }
+  function updateService(idx,field,val){ setPanier(p=>p.map((s,i)=>i===idx?{...s,[field]:val}:s)); }
+
+  const sousTotal = panier.reduce((acc,s)=>{
+    const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return acc;
+    return acc + (s.isKg ? (s.poids?Math.round(parseFloat(s.poids)*t.prix):0) : Math.round(parseInt(s.qte||1)*t.prix));
+  },0);
   const frais=livraison?fraisLiv:0;
   const remiseMontant=Math.round((sousTotal+frais)*remisePct/100);
   const total=sousTotal+frais-remiseMontant;
   const pts=Math.floor(total/100);
 
   function creer(){
-    if(!nom||!poids) return;
-    // Calculer l'heure de prêt estimée
+    if(!nom||panier.length===0||sousTotal===0) return;
     const est=ESTIMATIONS.find(e=>e.id===estimation)||ESTIMATIONS[2];
     const heureRetrait=new Date(Date.now()+est.duree*3600000);
     const heureStr=estimation==="demain"?"demain matin vers 8h":estimation==="2j"?"après-demain matin":
-      heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd&apos;hui";
+      heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd'hui";
+    const firstTarif=tarifsDisp.find(t=>t.id===panier[0]?.tarifId)||tarifsDisp[0];
+    const poidsTotal=panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
     const c={id:genId(),client:nom,tel,
-      poids:isKg?(parseFloat(poids)||0):0, qte:isKg?1:parseInt(qte||1),
-      poidsStatut:isKg?(isDepot?"estimated":"confirmed"):"confirmed",
-      tarifId:tarif.id,tarif:tarif.prix,tarifType:tarif.type||"kg",total,statut:"En cours",date:todayStr(),
+      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
+      poids:poidsTotal, qte:1,
+      poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
+      tarifId:firstTarif.id,tarif:firstTarif.prix,tarifType:firstTarif.type||"kg",
+      total,statut:"En cours",date:todayStr(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,remise:remisePct,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,
       estimation:est.id,heureRetrait:heureRetrait.toISOString(),dureeEstimee:est.label};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
-    // Auto-enregistrement client + historique permanent
     if(upsertClient && nom.trim()) {
       const existing = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
-      const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:c.poids,statut:c.statut,service:tarif.label};
+      const services=panier.map(s=>tarifsDisp.find(t=>t.id===s.tarifId)?.label||"").join(", ");
+      const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:poidsTotal,statut:c.statut,service:services};
       if(existing) {
         upsertClient({...existing, historique:[cmdEntry,...(existing.historique||[])], totalDepense:(existing.totalDepense||0)+c.total, commandes:[cmdEntry,...(existing.commandes||[])]});
       } else {
         upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total});
       }
     }
-    // Envoyer confirmation WhatsApp avec estimation si numéro disponible
+    const detailServices=panier.map(s=>{const t=tarifsDisp.find(x=>x.id===s.tarifId);return s.isKg?`⚖️ ${t?.label}: ${s.poids||"?"}kg × ${fmt(t?.prix||0)}F`:`👕 ${t?.label}: ${s.qte} pièce(s) × ${fmt(t?.prix||0)}F`;}).join("\n");
     if(tel){
       setTimeout(()=>sendWhatsApp(tel,
-        '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n⚖️ '+c.poids+' kg\n💰 '+fmt(total)+' FCFA\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
+        '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n\n'+detailServices+'\n\n💰 *Total : '+fmt(total)+' FCFA*\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
       ),400);
     }
-    setQte(1);
+    setPanier([]);
     setTicket(c);
   }
 
@@ -259,43 +270,64 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:16}}>Nouvelle Commande</h2>
       <Inp label="Nom *" value={nom} onChange={e=>setNom(e.target.value)} placeholder="Aminata Mensah" />
       <Inp label="Téléphone" value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00" />
+      {/* ── Ajouter un service ── */}
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Service *</label>
-        {tarifs.map(tr=>{
-          const trKg=(tr.type||"kg")==="kg";
-          const sel=tarif.id===tr.id;
-          return (
-            <div key={tr.id} onClick={()=>{setTarif(tr);setQte(1);setPoids("");}}
-              style={{background:sel?(trKg?"#0D1F6E":"#1A0D3D"):CARD,border:`2px solid ${sel?(trKg?BLU2:"#A855F7"):BDR}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span>{trKg?"⚖️":"👕"}</span>
-                <span style={{fontWeight:600,fontSize:14,color:sel?"#F8FAFF":"#8892B0"}}>{tr.label}</span>
+        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>Ajouter un service</label>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {tarifsDisp.map(tr=>{
+            const trKg=(tr.type||"kg")==="kg";
+            return (
+              <div key={tr.id} onClick={()=>addService(tr.id)}
+                style={{background:CARD,border:`1px solid ${trKg?BDR:"rgba(168,85,247,0.2)"}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span>{trKg?"⚖️":"👕"}</span>
+                  <span style={{fontWeight:600,fontSize:14,color:"#F8FAFF"}}>{tr.label}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:trKg?CYAN:"#A855F7",fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{trKg?"kg":"pièce"}</span>
+                  <span style={{color:trKg?BLU2:"#A855F7",fontWeight:900,fontSize:20,lineHeight:1}}>＋</span>
+                </div>
               </div>
-              <span style={{color:trKg?CYAN:"#A855F7",fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{trKg?"kg":"pièce"}</span>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
-      <div style={{marginBottom:12}}>
-        {isKg ? (
-          <>
-            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>⚖️ Poids (kg) * {isDepot&&<span style={{color:"#FFB800",fontSize:10}}>Estimé</span>}</label>
-            <input type="number" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="3.5"
-              style={{width:"100%",background:CARD,border:`1px solid ${isDepot?"rgba(255,184,0,0.4)":BDR}`,borderRadius:13,padding:"13px",color:isDepot?"#FFB800":CYAN,fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
-          </>
-        ) : (
-          <>
-            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>👕 Nombre de pièces *</label>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>setQte(q=>Math.max(1,q-1))} style={{width:50,height:50,borderRadius:12,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:26,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
-              <input type="number" min="1" value={qte} onChange={e=>setQte(Math.max(1,parseInt(e.target.value)||1))}
-                style={{flex:1,background:CARD,border:"2px solid #A855F7",borderRadius:13,padding:"13px",color:"#A855F7",fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
-              <button onClick={()=>setQte(q=>q+1)} style={{width:50,height:50,borderRadius:12,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:26,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
-            </div>
-            <p style={{fontSize:11,color:"#8892B0",marginTop:6,textAlign:"center"}}>{qte} pièce{qte>1?"s":""} × {fmt(tarif.prix)} F = <strong style={{color:"#A855F7"}}>{fmt(sousTotal)} F</strong></p>
-          </>
-        )}
-      </div>
+
+      {/* ── Panier ── */}
+      {panier.length>0&&(
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>Sélection</label>
+          {panier.map((s,idx)=>{
+            const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return null;
+            const ligneTotal=s.isKg?(s.poids?Math.round(parseFloat(s.poids)*t.prix):0):Math.round(parseInt(s.qte||1)*t.prix);
+            return (
+              <div key={idx} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${s.isKg?BDR:"rgba(168,85,247,0.25)"}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontWeight:700,fontSize:13,color:s.isKg?BLU2:"#A855F7"}}>{s.isKg?"⚖️":"👕"} {t.label}</span>
+                  <button onClick={()=>removeService(idx)} style={{background:"none",border:"none",color:"#FF4444",fontSize:16,cursor:"pointer"}}>✕</button>
+                </div>
+                {s.isKg ? (
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <input type="number" step="0.5" value={s.poids} onChange={e=>updateService(idx,"poids",e.target.value)}
+                      placeholder={isDepot?"Estimé (kg)":"Poids (kg)"}
+                      style={{flex:1,background:DARK,border:`1px solid ${isDepot?"rgba(255,184,0,0.4)":BLU2}`,borderRadius:10,padding:"10px",color:isDepot?"#FFB800":CYAN,fontSize:22,fontWeight:700,outline:"none",textAlign:"center"}} />
+                    <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>kg × {fmt(t.prix)}F</span>
+                    {ligneTotal>0&&<span style={{color:isDepot?"#FFB800":CYAN,fontWeight:700,flexShrink:0}}>{fmt(ligneTotal)}F</span>}
+                  </div>
+                ) : (
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <button onClick={()=>updateService(idx,"qte",Math.max(1,(parseInt(s.qte)||1)-1))} style={{width:44,height:44,borderRadius:10,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
+                    <input type="number" min="1" value={s.qte} onChange={e=>updateService(idx,"qte",Math.max(1,parseInt(e.target.value)||1))}
+                      style={{flex:1,background:DARK,border:"2px solid #A855F7",borderRadius:10,padding:"10px",color:"#A855F7",fontSize:22,fontWeight:700,outline:"none",textAlign:"center"}} />
+                    <button onClick={()=>updateService(idx,"qte",(parseInt(s.qte)||1)+1)} style={{width:44,height:44,borderRadius:10,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+                    <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>× {fmt(t.prix)}F = <strong style={{color:"#A855F7"}}>{fmt(ligneTotal)}F</strong></span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
       <div style={{marginBottom:12}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Livraison 🛵 (+{fmt(LIVRAISON_TARIF)} FCFA)</label>
         <div style={{display:"flex",gap:8}}>
@@ -331,9 +363,9 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           ))}
         </div>
       </div>
-      {poids&&(
+      {sousTotal>0&&(
         <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:18,padding:18,marginBottom:16,border:`1px solid ${isDepot?"rgba(255,184,0,0.3)":"rgba(0,194,255,0.3)"}`}}>
-          {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>{isKg?`Lavage (${poids}kg × ${fmt(tarif.prix)}F)`:`${tarif.label} (${qte} pièce${qte>1?"s":""})`}</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(LIVRAISON_TARIF)} FCFA</span></div></>}
+          {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>Services</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(frais)} FCFA</span></div></>}
           {remiseMontant>0&&(
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <span style={{color:"#4ADE80",fontSize:13}}>🎁 Réduction ({remisePct}%)</span>
@@ -363,7 +395,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         </p>
       </div>
 
-      <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||(isKg?!poids:qte<1)} />
+      <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||panier.length===0||sousTotal===0} />
     </div>
   );
 }
