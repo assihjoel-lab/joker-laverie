@@ -1458,7 +1458,7 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                           {!can&&<p style={{fontSize:10,color:"#8892B0"}}>{r.pts-client.points} pts manquants</p>}
                         </div>
                       </div>
-                      <button onClick={()=>can&&setConfirmReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
+                      <button onClick={()=>{ if(can) setConfirmReward(r); }} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
                     </div>
                   );
                 })}
@@ -1466,65 +1466,6 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                 <STitle text="Historique" />
                 {(client.historique||[]).length===0&&<p style={{color:"#8892B0",fontSize:13}}>Aucun historique</p>}
                 {(client.historique||[]).slice(0,8).map((h,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-                    <div><p style={{fontSize:13,fontWeight:600}}>{h.desc}</p><p style={{fontSize:11,color:"#8892B0"}}>{h.date}</p></div>
-                    <span style={{color:h.pts>0?CYAN:"#FF6B6B",fontWeight:700,fontSize:14}}>{h.pts>0?"+":""}{h.pts} pts</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-  return (
-    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
-      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Fidélité 🏅</h2>
-      {msg&&<div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 16px",marginBottom:14,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700}}>{msg}</p></div>}
-      <input value={search} onChange={e=>{setSearch(e.target.value);setSel(null);}} placeholder="🔍 Rechercher un client…" style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}} />
-      {filtered.map(c=>{
-        const lv=getLevel(c.points);
-        const isOpen=sel===c.id;
-        return (
-          <div key={c.id}>
-            <div onClick={()=>setSel(isOpen?null:c.id)} style={{background:isOpen?"#0D1F6E":CARD,borderRadius:isOpen?"18px 18px 0 0":18,padding:16,marginBottom:isOpen?0:10,border:`1px solid ${isOpen?BLU2:BDR}`,cursor:"pointer"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <div style={{width:44,height:44,borderRadius:12,background:`${lv.color}22`,border:`2px solid ${lv.color}60`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue',cursive",fontSize:18,color:lv.color}}>{lv.label[0]}</div>
-                  <div><p style={{fontWeight:700,fontSize:15}}>{c.nom}</p><p style={{fontSize:12,color:"#8892B0"}}>{c.tel}</p></div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:lv.color}}>{c.points}</p>
-                  <p style={{fontSize:10,color:lv.color,fontWeight:700}}>{lv.label}</p>
-                </div>
-              </div>
-            </div>
-            {isOpen&&client&&(
-              <div style={{background:"#0A1628",borderRadius:"0 0 18px 18px",padding:16,border:`1px solid ${BLU2}`,borderTop:"none",marginBottom:10,animation:"fadeIn 0.3s ease"}}>
-                <STitle text="Ajouter des points" />
-                <div style={{display:"flex",gap:8,marginBottom:10}}>
-                  {[10,20,50,100].map(p=><button key={p} onClick={()=>setAddPts(String(p))} style={{flex:1,background:addPts===String(p)?`${BLU}40`:DARK,border:`1px solid ${addPts===String(p)?BLU2:BDR}`,borderRadius:10,padding:"10px 4px",color:addPts===String(p)?BLU2:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>+{p}</button>)}
-                </div>
-                <div style={{display:"flex",gap:10,marginBottom:14}}>
-                  <input type="number" value={addPts} onChange={e=>setAddPts(e.target.value)} placeholder="Nb pts" style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:CYAN,fontSize:18,fontWeight:700,outline:"none",textAlign:"center"}} />
-                  <button onClick={ajouterPts} disabled={!addPts||parseInt(addPts)<=0} style={{flex:1,background:addPts?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"11px",color:addPts?"#fff":"#8892B0",fontWeight:700,cursor:addPts?"pointer":"not-allowed"}}>Ajouter</button>
-                </div>
-                <STitle text="Accorder une récompense" />
-                {rewards.map(r=>{
-                  const can=client.points>=r.pts;
-                  return (
-                    <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${can?r.color+"30":BDR}`,opacity:can?1:0.5}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <span style={{fontSize:20}}>{r.emoji}</span>
-                        <div><p style={{fontWeight:700,fontSize:13}}>{r.label}</p><p style={{fontSize:11,color:r.color}}>{r.pts} pts</p></div>
-                      </div>
-                      <button onClick={()=>setConfirmReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
-                    </div>
-                  );
-                })}
-                <STitle text="Historique" />
-                {(client.historique||[]).slice(0,5).map((h,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
                     <div><p style={{fontSize:13,fontWeight:600}}>{h.desc}</p><p style={{fontSize:11,color:"#8892B0"}}>{h.date}</p></div>
                     <span style={{color:h.pts>0?CYAN:"#FF6B6B",fontWeight:700,fontSize:14}}>{h.pts>0?"+":""}{h.pts} pts</span>
