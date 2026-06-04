@@ -1030,12 +1030,12 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
 
   function getWeekDates(){
     const days=[]; const now=new Date();
-    for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}));}
+    for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));}
     return days;
   }
   function getMonthDates(){
     const days=[]; const now=new Date();
-    for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}));}
+    for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));}
     return days;
   }
 
