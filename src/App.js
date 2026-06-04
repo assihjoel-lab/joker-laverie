@@ -158,7 +158,9 @@ function PinScreen({ onSuccess, correctPin }){
 function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,onBack,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
-  const [panier,setPanier]=useState([]);  // [{tarifId,poids,qte,isKg}]
+  const [poids,setPoids]=useState("");
+  const [tarif,setTarif]=useState(tarifs[0]||TARIFS_INIT[0]);
+  const [qte,setQte]=useState(1);
   const [paiement,setPaiement]=useState(PAIEMENTS[0]);
   const [livraison,setLiv]=useState(null);
   const [adresse,setAdresse]=useState("");
@@ -178,61 +180,48 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   ];
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
-  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
-
-  function addService(tid){
-    const t=tarifsDisp.find(x=>x.id===tid); if(!t) return;
-    const isKg=(t.type||"kg")==="kg";
-    setPanier(p=>[...p,{tarifId:tid,poids:"",qte:1,isKg}]);
-  }
-  function removeService(idx){ setPanier(p=>p.filter((_,i)=>i!==idx)); }
-  function updateService(idx,field,val){ setPanier(p=>p.map((s,i)=>i===idx?{...s,[field]:val}:s)); }
-
-  const sousTotal = panier.reduce((acc,s)=>{
-    const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return acc;
-    return acc + (s.isKg ? (s.poids?Math.round(parseFloat(s.poids)*t.prix):0) : Math.round(parseInt(s.qte||1)*t.prix));
-  },0);
+  const isKg=(tarif?.type||"kg")==="kg";
+  const sousTotal = isKg
+    ? (poids ? Math.round(parseFloat(poids)*tarif.prix) : 0)
+    : Math.round(parseInt(qte||1)*tarif.prix);
   const frais=livraison?fraisLiv:0;
   const remiseMontant=Math.round((sousTotal+frais)*remisePct/100);
   const total=sousTotal+frais-remiseMontant;
   const pts=Math.floor(total/100);
 
   function creer(){
-    if(!nom||panier.length===0||sousTotal===0) return;
+    if(!nom||!poids) return;
+    // Calculer l'heure de prêt estimée
     const est=ESTIMATIONS.find(e=>e.id===estimation)||ESTIMATIONS[2];
     const heureRetrait=new Date(Date.now()+est.duree*3600000);
     const heureStr=estimation==="demain"?"demain matin vers 8h":estimation==="2j"?"après-demain matin":
-      heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd'hui";
-    const firstTarif=tarifsDisp.find(t=>t.id===panier[0]?.tarifId)||tarifsDisp[0];
-    const poidsTotal=panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
+      heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd&apos;hui";
     const c={id:genId(),client:nom,tel,
-      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
-      poids:poidsTotal, qte:1,
-      poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
-      tarifId:firstTarif.id,tarif:firstTarif.prix,tarifType:firstTarif.type||"kg",
-      total,statut:"En cours",date:todayStr(),
+      poids:isKg?(parseFloat(poids)||0):0, qte:isKg?1:parseInt(qte||1),
+      poidsStatut:isKg?(isDepot?"estimated":"confirmed"):"confirmed",
+      tarifId:tarif.id,tarif:tarif.prix,tarifType:tarif.type||"kg",total,statut:"En cours",date:todayStr(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,remise:remisePct,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,
       estimation:est.id,heureRetrait:heureRetrait.toISOString(),dureeEstimee:est.label};
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
+    // Auto-enregistrement client + historique permanent
     if(upsertClient && nom.trim()) {
       const existing = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
-      const services=panier.map(s=>tarifsDisp.find(t=>t.id===s.tarifId)?.label||"").join(", ");
-      const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:poidsTotal,statut:c.statut,service:services};
+      const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:c.poids,statut:c.statut,service:tarif.label};
       if(existing) {
         upsertClient({...existing, historique:[cmdEntry,...(existing.historique||[])], totalDepense:(existing.totalDepense||0)+c.total, commandes:[cmdEntry,...(existing.commandes||[])]});
       } else {
         upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total});
       }
     }
-    const detailServices=panier.map(s=>{const t=tarifsDisp.find(x=>x.id===s.tarifId);return s.isKg?`⚖️ ${t?.label}: ${s.poids||"?"}kg × ${fmt(t?.prix||0)}F`:`👕 ${t?.label}: ${s.qte} pièce(s) × ${fmt(t?.prix||0)}F`;}).join("\n");
+    // Envoyer confirmation WhatsApp avec estimation si numéro disponible
     if(tel){
       setTimeout(()=>sendWhatsApp(tel,
-        '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n\n'+detailServices+'\n\n💰 *Total : '+fmt(total)+' FCFA*\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
+        '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n⚖️ '+c.poids+' kg\n💰 '+fmt(total)+' FCFA\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
       ),400);
     }
-    setPanier([]);
+    setQte(1);
     setTicket(c);
   }
 
@@ -270,64 +259,43 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:16}}>Nouvelle Commande</h2>
       <Inp label="Nom *" value={nom} onChange={e=>setNom(e.target.value)} placeholder="Aminata Mensah" />
       <Inp label="Téléphone" value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00" />
-      {/* ── Ajouter un service ── */}
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>Ajouter un service</label>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {tarifsDisp.map(tr=>{
-            const trKg=(tr.type||"kg")==="kg";
-            return (
-              <div key={tr.id} onClick={()=>addService(tr.id)}
-                style={{background:CARD,border:`1px solid ${trKg?BDR:"rgba(168,85,247,0.2)"}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span>{trKg?"⚖️":"👕"}</span>
-                  <span style={{fontWeight:600,fontSize:14,color:"#F8FAFF"}}>{tr.label}</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{color:trKg?CYAN:"#A855F7",fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{trKg?"kg":"pièce"}</span>
-                  <span style={{color:trKg?BLU2:"#A855F7",fontWeight:900,fontSize:20,lineHeight:1}}>＋</span>
-                </div>
+        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Service *</label>
+        {tarifs.map(tr=>{
+          const trKg=(tr.type||"kg")==="kg";
+          const sel=tarif.id===tr.id;
+          return (
+            <div key={tr.id} onClick={()=>{setTarif(tr);setQte(1);setPoids("");}}
+              style={{background:sel?(trKg?"#0D1F6E":"#1A0D3D"):CARD,border:`2px solid ${sel?(trKg?BLU2:"#A855F7"):BDR}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:7}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span>{trKg?"⚖️":"👕"}</span>
+                <span style={{fontWeight:600,fontSize:14,color:sel?"#F8FAFF":"#8892B0"}}>{tr.label}</span>
               </div>
-            );
-          })}
-        </div>
+              <span style={{color:trKg?CYAN:"#A855F7",fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{trKg?"kg":"pièce"}</span>
+            </div>
+          );
+        })}
       </div>
-
-      {/* ── Panier ── */}
-      {panier.length>0&&(
-        <div style={{marginBottom:12}}>
-          <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>Sélection</label>
-          {panier.map((s,idx)=>{
-            const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return null;
-            const ligneTotal=s.isKg?(s.poids?Math.round(parseFloat(s.poids)*t.prix):0):Math.round(parseInt(s.qte||1)*t.prix);
-            return (
-              <div key={idx} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${s.isKg?BDR:"rgba(168,85,247,0.25)"}`}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <span style={{fontWeight:700,fontSize:13,color:s.isKg?BLU2:"#A855F7"}}>{s.isKg?"⚖️":"👕"} {t.label}</span>
-                  <button onClick={()=>removeService(idx)} style={{background:"none",border:"none",color:"#FF4444",fontSize:16,cursor:"pointer"}}>✕</button>
-                </div>
-                {s.isKg ? (
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <input type="number" step="0.5" value={s.poids} onChange={e=>updateService(idx,"poids",e.target.value)}
-                      placeholder={isDepot?"Estimé (kg)":"Poids (kg)"}
-                      style={{flex:1,background:DARK,border:`1px solid ${isDepot?"rgba(255,184,0,0.4)":BLU2}`,borderRadius:10,padding:"10px",color:isDepot?"#FFB800":CYAN,fontSize:22,fontWeight:700,outline:"none",textAlign:"center"}} />
-                    <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>kg × {fmt(t.prix)}F</span>
-                    {ligneTotal>0&&<span style={{color:isDepot?"#FFB800":CYAN,fontWeight:700,flexShrink:0}}>{fmt(ligneTotal)}F</span>}
-                  </div>
-                ) : (
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <button onClick={()=>updateService(idx,"qte",Math.max(1,(parseInt(s.qte)||1)-1))} style={{width:44,height:44,borderRadius:10,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
-                    <input type="number" min="1" value={s.qte} onChange={e=>updateService(idx,"qte",Math.max(1,parseInt(e.target.value)||1))}
-                      style={{flex:1,background:DARK,border:"2px solid #A855F7",borderRadius:10,padding:"10px",color:"#A855F7",fontSize:22,fontWeight:700,outline:"none",textAlign:"center"}} />
-                    <button onClick={()=>updateService(idx,"qte",(parseInt(s.qte)||1)+1)} style={{width:44,height:44,borderRadius:10,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
-                    <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>× {fmt(t.prix)}F = <strong style={{color:"#A855F7"}}>{fmt(ligneTotal)}F</strong></span>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div style={{marginBottom:12}}>
+        {isKg ? (
+          <>
+            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>⚖️ Poids (kg) * {isDepot&&<span style={{color:"#FFB800",fontSize:10}}>Estimé</span>}</label>
+            <input type="number" value={poids} onChange={e=>setPoids(e.target.value)} placeholder="3.5"
+              style={{width:"100%",background:CARD,border:`1px solid ${isDepot?"rgba(255,184,0,0.4)":BDR}`,borderRadius:13,padding:"13px",color:isDepot?"#FFB800":CYAN,fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
+          </>
+        ) : (
+          <>
+            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>👕 Nombre de pièces *</label>
+            <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={()=>setQte(q=>Math.max(1,q-1))} style={{width:50,height:50,borderRadius:12,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:26,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
+              <input type="number" min="1" value={qte} onChange={e=>setQte(Math.max(1,parseInt(e.target.value)||1))}
+                style={{flex:1,background:CARD,border:"2px solid #A855F7",borderRadius:13,padding:"13px",color:"#A855F7",fontSize:28,fontWeight:700,outline:"none",textAlign:"center"}} />
+              <button onClick={()=>setQte(q=>q+1)} style={{width:50,height:50,borderRadius:12,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:26,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+            </div>
+            <p style={{fontSize:11,color:"#8892B0",marginTop:6,textAlign:"center"}}>{qte} pièce{qte>1?"s":""} × {fmt(tarif.prix)} F = <strong style={{color:"#A855F7"}}>{fmt(sousTotal)} F</strong></p>
+          </>
+        )}
+      </div>
       <div style={{marginBottom:12}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Livraison 🛵 (+{fmt(LIVRAISON_TARIF)} FCFA)</label>
         <div style={{display:"flex",gap:8}}>
@@ -363,9 +331,9 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           ))}
         </div>
       </div>
-      {sousTotal>0&&(
+      {poids&&(
         <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:18,padding:18,marginBottom:16,border:`1px solid ${isDepot?"rgba(255,184,0,0.3)":"rgba(0,194,255,0.3)"}`}}>
-          {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>Services</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(frais)} FCFA</span></div></>}
+          {frais>0&&<><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{color:"#8892B0",fontSize:13}}>{isKg?`Lavage (${poids}kg × ${fmt(tarif.prix)}F)`:`${tarif.label} (${qte} pièce${qte>1?"s":""})`}</span><span style={{fontSize:13}}>{fmt(sousTotal)} FCFA</span></div><div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7",fontSize:13}}>+{fmt(LIVRAISON_TARIF)} FCFA</span></div></>}
           {remiseMontant>0&&(
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
               <span style={{color:"#4ADE80",fontSize:13}}>🎁 Réduction ({remisePct}%)</span>
@@ -395,7 +363,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         </p>
       </div>
 
-      <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||panier.length===0||sousTotal===0} />
+      <Btn label="🎫 Créer le ticket" onClick={creer} disabled={!nom||(isKg?!poids:qte<1)} />
     </div>
   );
 }
@@ -1458,7 +1426,7 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                           {!can&&<p style={{fontSize:10,color:"#8892B0"}}>{r.pts-client.points} pts manquants</p>}
                         </div>
                       </div>
-                      <button onClick={()=>{ if(can) setConfirmReward(r); }} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
+                      <button onClick={()=>can&&setConfirmReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
                     </div>
                   );
                 })}
@@ -1466,6 +1434,65 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                 <STitle text="Historique" />
                 {(client.historique||[]).length===0&&<p style={{color:"#8892B0",fontSize:13}}>Aucun historique</p>}
                 {(client.historique||[]).slice(0,8).map((h,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                    <div><p style={{fontSize:13,fontWeight:600}}>{h.desc}</p><p style={{fontSize:11,color:"#8892B0"}}>{h.date}</p></div>
+                    <span style={{color:h.pts>0?CYAN:"#FF6B6B",fontWeight:700,fontSize:14}}>{h.pts>0?"+":""}{h.pts} pts</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+  return (
+    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Fidélité 🏅</h2>
+      {msg&&<div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 16px",marginBottom:14,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700}}>{msg}</p></div>}
+      <input value={search} onChange={e=>{setSearch(e.target.value);setSel(null);}} placeholder="🔍 Rechercher un client…" style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px 15px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}} />
+      {filtered.map(c=>{
+        const lv=getLevel(c.points);
+        const isOpen=sel===c.id;
+        return (
+          <div key={c.id}>
+            <div onClick={()=>setSel(isOpen?null:c.id)} style={{background:isOpen?"#0D1F6E":CARD,borderRadius:isOpen?"18px 18px 0 0":18,padding:16,marginBottom:isOpen?0:10,border:`1px solid ${isOpen?BLU2:BDR}`,cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{width:44,height:44,borderRadius:12,background:`${lv.color}22`,border:`2px solid ${lv.color}60`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue',cursive",fontSize:18,color:lv.color}}>{lv.label[0]}</div>
+                  <div><p style={{fontWeight:700,fontSize:15}}>{c.nom}</p><p style={{fontSize:12,color:"#8892B0"}}>{c.tel}</p></div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:lv.color}}>{c.points}</p>
+                  <p style={{fontSize:10,color:lv.color,fontWeight:700}}>{lv.label}</p>
+                </div>
+              </div>
+            </div>
+            {isOpen&&client&&(
+              <div style={{background:"#0A1628",borderRadius:"0 0 18px 18px",padding:16,border:`1px solid ${BLU2}`,borderTop:"none",marginBottom:10,animation:"fadeIn 0.3s ease"}}>
+                <STitle text="Ajouter des points" />
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  {[10,20,50,100].map(p=><button key={p} onClick={()=>setAddPts(String(p))} style={{flex:1,background:addPts===String(p)?`${BLU}40`:DARK,border:`1px solid ${addPts===String(p)?BLU2:BDR}`,borderRadius:10,padding:"10px 4px",color:addPts===String(p)?BLU2:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>+{p}</button>)}
+                </div>
+                <div style={{display:"flex",gap:10,marginBottom:14}}>
+                  <input type="number" value={addPts} onChange={e=>setAddPts(e.target.value)} placeholder="Nb pts" style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:CYAN,fontSize:18,fontWeight:700,outline:"none",textAlign:"center"}} />
+                  <button onClick={ajouterPts} disabled={!addPts||parseInt(addPts)<=0} style={{flex:1,background:addPts?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"11px",color:addPts?"#fff":"#8892B0",fontWeight:700,cursor:addPts?"pointer":"not-allowed"}}>Ajouter</button>
+                </div>
+                <STitle text="Accorder une récompense" />
+                {rewards.map(r=>{
+                  const can=client.points>=r.pts;
+                  return (
+                    <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${can?r.color+"30":BDR}`,opacity:can?1:0.5}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontSize:20}}>{r.emoji}</span>
+                        <div><p style={{fontWeight:700,fontSize:13}}>{r.label}</p><p style={{fontSize:11,color:r.color}}>{r.pts} pts</p></div>
+                      </div>
+                      <button onClick={()=>accorderReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
+                    </div>
+                  );
+                })}
+                <STitle text="Historique" />
+                {(client.historique||[]).slice(0,5).map((h,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
                     <div><p style={{fontSize:13,fontWeight:600}}>{h.desc}</p><p style={{fontSize:11,color:"#8892B0"}}>{h.date}</p></div>
                     <span style={{color:h.pts>0?CYAN:"#FF6B6B",fontWeight:700,fontSize:14}}>{h.pts>0?"+":""}{h.pts} pts</span>
@@ -2045,7 +2072,7 @@ function ClientsDB({ commandes }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout,promos,setPromos,setClients,removeClient,removeCmd}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout }){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
@@ -2474,9 +2501,6 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       {tab==="clients"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} /></div>
       )}
-      {tab==="promos"&&(
-        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionPromos promos={promos} setPromos={setPromos} /></div>
-      )}
       {tab==="reglages"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Reglages gerantPin={gerantPin} setGerantPin={setGerantPin} adminPw={adminPw} setAdminPw={setAdminPw} /></div>
       )}
@@ -2597,12 +2621,7 @@ export default function App(){
   const [commandes,  upsertCmd,     removeCmd,   cmdReady]  = useFireCollection("commandes",  COMMANDES_INIT);
   const [friperie,   upsertFrip,    removeFrip,  fripReady] = useFireCollection("friperie",   FRIPERIE_INIT);
   const [livreurs,   upsertLivreur, removeLivreur,livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
-  const [clients,    upsertClient,  removeClient, cliReady]  = useFireCollection("clients",    []);
-  function setClients(fn){
-    const next=typeof fn==="function"?fn(clients):fn;
-    next.forEach(c=>upsertClient(c));
-    clients.forEach(c=>{ if(!next.find(u=>u.id===c.id)) removeClient(String(c.id)); });
-  }
+  const [clients,    upsertClient,  ,            cliReady]  = useFireCollection("clients",    []);
   const [promos,     upsertPromo,   removePromo, promoReady]= useFireCollection("promos",     []);
   const [tarifs,     saveTarifs,    tarReady]    = useFireDoc("config","tarifs",    TARIFS_INIT);
   const [rewards,    saveRewards,   rewReady]    = useFireDoc("config","rewards",   REWARDS_INIT);
@@ -2665,8 +2684,8 @@ export default function App(){
   return (
     <div style={{minHeight:"100vh",background:DARK,fontFamily:"'DM Sans',sans-serif",color:"#F8FAFF",maxWidth:420,margin:"0 auto"}}>
       <GerantDashboard
-        commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} removeCmd={removeCmd}
-        upsertClient={upsertClient} clients={clients} setClients={setClients} removeClient={removeClient}
+        commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd}
+        upsertClient={upsertClient} clients={clients}
         friperie={friperie} setFriperie={setFriperie}
         tarifs={tarifs} setTarifs={setTarifs}
         rewards={rewards} setRewards={setRewards}
