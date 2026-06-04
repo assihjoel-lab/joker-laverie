@@ -1519,7 +1519,7 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                         <span style={{fontSize:20}}>{r.emoji}</span>
                         <div><p style={{fontWeight:700,fontSize:13}}>{r.label}</p><p style={{fontSize:11,color:r.color}}>{r.pts} pts</p></div>
                       </div>
-                      <button onClick={()=>accorderReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
+                      <button onClick={()=>setConfirmReward(r)} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
                     </div>
                   );
                 })}
@@ -2532,6 +2532,9 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       )}
       {tab==="clients"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} /></div>
+      )}
+      {tab==="promos"&&(
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionPromos promos={promos} setPromos={setPromos} /></div>
       )}
       {tab==="reglages"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Reglages gerantPin={gerantPin} setGerantPin={setGerantPin} adminPw={adminPw} setAdminPw={setAdminPw} /></div>
