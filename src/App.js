@@ -1030,12 +1030,12 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
 
   function getWeekDates(){
     const days=[]; const now=new Date();
-    for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}));}
+    for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));}
     return days;
   }
   function getMonthDates(){
     const days=[]; const now=new Date();
-    for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short"}));}
+    for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));}
     return days;
   }
 
@@ -2045,7 +2045,7 @@ function ClientsDB({ commandes }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses=[],upsertDepense,removeDepense,objectifJour,saveObjectifJour,onLogout,promos,setPromos,setClients,removeClient,removeCmd}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,onLogout}){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
