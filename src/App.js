@@ -837,13 +837,20 @@ function GestionPromos({ promos, setPromos }){
 
   function ajouter(){
     if(!form.label||!form.remise) return;
-    setPromos(p=>[...p,{...form,id:Date.now(),remise:parseInt(form.remise)}]);
+    setPromos(p=>[...p,{...form,id:String(Date.now()),remise:parseInt(form.remise),actif:true,createdAt:todayStr()}]);
     setForm({label:"",remise:10,cible:"tous",dateDebut:"",dateFin:"",actif:true});
     setShow(false); flash("OK Promotion ajoutee !");
   }
 
-  const aujourd = todayStr();
-  const actives = (promos||[]).filter(p=>p.actif&&(!p.dateDebut||p.dateDebut<=aujourd)&&(!p.dateFin||p.dateFin>=aujourd));
+  const todayISO = new Date().toISOString().slice(0,10);
+  const actives = (promos||[]).filter(p=>{
+    const isActif = p.actif===true||p.actif==="true";
+    if(!isActif) return false;
+    const debutOk = !p.dateDebut||p.dateDebut<=todayISO;
+    const finOk   = !p.dateFin  ||p.dateFin  >=todayISO;
+    return debutOk&&finOk;
+  });
+  const toutes = (promos||[]);
 
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -882,18 +889,30 @@ function GestionPromos({ promos, setPromos }){
           <Btn label="Ajouter la promotion" onClick={ajouter} disabled={!form.label||!form.remise} />
         </div>
       )}
-      {actives.length>0&&(
+      {toutes.length===0&&!show&&(
+        <p style={{color:"#8892B0",textAlign:"center",padding:"24px 0",fontSize:14}}>Aucune promotion. Cliquez "+ Créer" pour en ajouter.</p>
+      )}
+      {toutes.length>0&&(
         <div style={{marginBottom:14}}>
-          <p style={{color:"#4ADE80",fontWeight:700,fontSize:13,marginBottom:8}}>{actives.length} promotion(s) active(s)</p>
-          {actives.map(p=>(
-            <div key={p.id} style={{background:"#0D2A1A",borderRadius:14,padding:"12px 16px",marginBottom:8,border:"1px solid #4ADE8030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <p style={{fontWeight:700,color:"#F8FAFF"}}>{p.label}</p>
-                <p style={{fontSize:12,color:"#4ADE80"}}>-{p.remise}% {p.dateDebut&&p.dateFin?`${p.dateDebut} au ${p.dateFin}`:""}</p>
+          <p style={{color:"#8892B0",fontWeight:700,fontSize:12,marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>{actives.length} active(s) · {toutes.length} au total</p>
+          {toutes.slice().reverse().map(p=>{
+            const isActif=p.actif===true||p.actif==="true";
+            return (
+              <div key={p.id} style={{background:isActif?"#0D2A1A":CARD,borderRadius:14,padding:"12px 16px",marginBottom:8,border:`1px solid ${isActif?"#4ADE8030":BDR}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <p style={{fontWeight:700,color:"#F8FAFF",fontSize:14}}>{p.label}</p>
+                    <span style={{background:isActif?"#4ADE8020":"#FF444420",color:isActif?"#4ADE80":"#FF6B6B",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:700}}>{isActif?"✅ Active":"⏸ Inactive"}</span>
+                  </div>
+                  <p style={{fontSize:12,color:isActif?"#4ADE80":"#8892B0"}}>-{p.remise}% {p.dateDebut?`du ${p.dateDebut}`:""}{p.dateFin?` au ${p.dateFin}`:""}</p>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button onClick={()=>setPromos(pr=>pr.map(x=>x.id===p.id?{...x,actif:!(x.actif===true||x.actif==="true")}:x))} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:8,padding:"5px 10px",color:"#8892B0",cursor:"pointer",fontSize:12}}>{isActif?"Pause":"Activer"}</button>
+                  <button onClick={()=>setPromos(pr=>pr.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#FF4444",cursor:"pointer",fontSize:18}}>✕</button>
+                </div>
               </div>
-              <button onClick={()=>setPromos(pr=>pr.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#FF4444",cursor:"pointer",fontSize:18}}>X</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
