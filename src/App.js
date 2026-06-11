@@ -155,7 +155,7 @@ function PinScreen({ onSuccess, correctPin }){
 }
 
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
-function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,onBack,onDone }){
+function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,onBack,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
   const [panier,setPanier]=useState([]);  // [{tarifId,poids,qte,isKg}]
@@ -166,6 +166,20 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [ticketPrint,setTicketPrint]=useState(null);
   const [fraisLiv,setFraisLiv]=useState(LIVRAISON_TARIF_DEFAULT);
   const [remisePct,setRemisePct]=useState(0);
+  const [promoAppliquee,setPromoAppliquee]=useState(null);
+
+  // Calcul auto remise = max(promo active, remise fidélité client)
+  const todayISO = new Date().toISOString().slice(0,10);
+  const promoActive = (promos||[]).find(p=>{
+    const isActif=p.actif===true||p.actif==="true";
+    if(!isActif) return false;
+    return (!p.dateDebut||p.dateDebut<=todayISO)&&(!p.dateFin||p.dateFin>=todayISO);
+  });
+  const clientExist = (clients||[]).find(c=>c.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&c.tel===tel.trim()));
+  const niveauClient = clientExist ? getLevel(clientExist.points||0) : null;
+  const remiseFidelite = niveauClient?.remise||0;
+  const remisePromo = promoActive?.remise||0;
+  const remiseAuto = Math.max(remiseFidelite, remisePromo);
   const [estimation,setEstimation]=useState("4h");
 
   const ESTIMATIONS=[
@@ -269,6 +283,18 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       <button onClick={onBack} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",marginBottom:14,fontSize:14}}>← Retour</button>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:16}}>Nouvelle Commande</h2>
       <Inp label="Nom *" value={nom} onChange={e=>setNom(e.target.value)} placeholder="Aminata Mensah" />
+      {nom.trim().length>1&&remiseAuto>0&&(
+        <div style={{background:"#0D2A1A",borderRadius:12,padding:"10px 14px",marginBottom:10,border:"1px solid #4ADE8030",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>🎁</span>
+          <div style={{flex:1}}>
+            <p style={{color:"#4ADE80",fontWeight:700,fontSize:13}}>
+              {promoActive&&remisePromo>=remiseFidelite?`Promo "${promoActive.label}" : -${remisePromo}%`:niveauClient?`Fidélité ${niveauClient.label} : -${remiseFidelite}%`:"Remise disponible"}
+            </p>
+            <p style={{color:"#8892B0",fontSize:11}}>Cliquez pour appliquer</p>
+          </div>
+          <button onClick={()=>setRemisePct(remiseAuto)} style={{background:"linear-gradient(135deg,#4ADE80,#22C55E)",border:"none",borderRadius:10,padding:"7px 12px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer"}}>-{remiseAuto}% ✅</button>
+        </div>
+      )}
       <Inp label="Téléphone" value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00" />
       {/* ── Ajouter un service ── */}
       <div style={{marginBottom:12}}>
@@ -2290,7 +2316,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
