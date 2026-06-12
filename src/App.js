@@ -264,7 +264,26 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         {ticket.poidsStatut==="estimated"&&<div style={{background:"#1A0D00",borderRadius:12,padding:10,marginTop:8,border:"1px solid #FFB80040"}}><p style={{color:"#FFB800",fontSize:13,fontWeight:600}}>⚖️ Poids estimé — à confirmer à la laverie</p></div>}
       </div>
       <div style={{background:CARD,borderRadius:18,padding:20,border:`1px solid ${BDR}`,marginBottom:16}}>
-        {[["N°",ticket.id],["Client",ticket.client],["Téléphone",ticket.tel||"—"],["Poids",ticket.poids+"kg"],["Service",tarif.label],["Sous-total",fmt(sousTotal)+" FCFA"],livraison?["Livraison 🛵",fmt(LIVRAISON_TARIF)+" FCFA"]:null,["TOTAL",fmt(total)+" FCFA"],["Paiement",PAIEMENTS.find(p=>p.id===ticket.paiement)?.label],["+Points","+"+pts+" 🏅"]].filter(Boolean).map(([k,v])=>(
+        {(()=>{
+          const lignes = ticket.panier&&ticket.panier.length>0?ticket.panier:[{tarifId:ticket.tarifId,label:ticket.serviceLabel,qte:ticket.poids,type:"kg",prix:ticket.tarif}];
+          const fraisT = ticket.livraison?(ticket.fraisLiv||LIVRAISON_TARIF):0;
+          const remPct = ticket.remise||0;
+          const sT = lignes.reduce((s,l)=>{const t=tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0};return s+Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));},0);
+          const remM = remPct>0?Math.round((sT+fraisT)*remPct/100):0;
+          const rows = [
+            ["N°", ticket.id],
+            ["Client", ticket.client],
+            ticket.tel?["Téléphone", ticket.tel]:null,
+            ticket.codeClient?["Code client", ticket.codeClient]:null,
+            ...lignes.map(l=>{const t=tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};const u=l.type==="unite"?"u.":"kg";return [`${t.label} (${l.qte}${u})`, fmt(Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0)))+" F"];}),
+            fraisT>0?["🛵 Livraison", "+"+fmt(fraisT)+" F"]:null,
+            remPct>0?["🎁 Remise ("+remPct+"%)", "-"+fmt(remM)+" F"]:null,
+            ["TOTAL", fmt(ticket.total)+" FCFA"],
+            ["Paiement", PAIEMENTS.find(p=>p.id===ticket.paiement)?.label||"—"],
+            ["+Points", "+"+pts+" 🏅"],
+          ].filter(Boolean);
+          return rows;
+        })().map(([k,v])=>(
           <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
@@ -441,13 +460,13 @@ function TicketModal({ c, tarifs, onClose }){
       // Sur iPhone: ouvrir le ticket dans un nouvel onglet pour partager/imprimer
       const el = document.getElementById("joker-ticket-print");
       if(!el) return;
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer;}@media print{.btn{display:none!important;}.no-print{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/><div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}<div class="row"><span>Service</span><span>${tarif.label}</span></div><div class="row"><span>Poids</span><span>${c.poids} kg</span></div><div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>${c.livraison?`<div class="row"><span>Livraison</span><span>+${fmt(frais)} FCFA</span></div>`:""}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div><div class="no-print"><button class="btn" onclick="window.print()">🖨️ Imprimer</button><button class="btn" style="background:#555;margin-top:8px;" onclick="window.close()">← Retour</button></div></body></html>`;
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer;}@media print{.btn{display:none!important;}.no-print{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, 2ème von après Batir, Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/><div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div><div class="no-print"><button class="btn" onclick="window.print()">🖨️ Imprimer</button><button class="btn" style="background:#555;margin-top:8px;" onclick="window.close()">← Retour</button></div></body></html>`;
       const blob = new Blob([html], {type:"text/html;charset=utf-8"});
       const url = URL.createObjectURL(blob);
       window.location.href = url;
     } else {
       // Sur PC/Android: ouvrir nouvelle fenêtre
-      const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">⚖️ Poids estimé — à confirmer</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}<div class="row"><span>Service</span><span>${tarif.label}</span></div><div class="row"><span>Poids</span><span>${c.poids} kg</span></div><div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>${c.livraison?`<div class="row"><span>Livraison</span><span>+${fmt(frais)} FCFA</span></div>`:""}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div></body></html>`;
+      const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, 2ème von après Batir, Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">⚖️ Poids estimé — à confirmer</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div></body></html>`;
       const w = window.open("","_blank","width=420,height=700");
       if(w){ w.document.write(ticketHTML); w.document.close(); w.onload=()=>{w.focus();w.print();}; }
       else {
@@ -1783,14 +1802,26 @@ function Reglages({ gerantPin,setGerantPin,adminPw,setAdminPw }){
 
 // ─── GÉNÉRATION FACTURE WHATSAPP ──────────────────────────
 function buildFacture(c, tarifs) {
-  const tarif  = tarifs.find(t=>t.id===c.tarifId)||{label:"Service",prix:c.tarif};
-  const pmt    = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
-  const frais  = c.livraison ? LIVRAISON_TARIF : 0;
-  const sousT  = c.total - frais;
-  const sep    = "─────────────────────";
+  const pmt   = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
+  const frais = c.livraison ? (c.fraisLiv||LIVRAISON_TARIF) : 0;
+  const sep   = "─────────────────────";
+  // Multi-services ou service unique
+  const lignes = c.panier && c.panier.length>0 ? c.panier : [{tarifId:c.tarifId,label:c.serviceLabel,qte:c.poids,type:c.type||"kg",prix:c.tarif}];
+  const sousTotal = lignes.reduce((s,l)=>{
+    const t = tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0};
+    return s + Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+  },0);
+  const remisePct = c.remise||0;
+  const remiseMontant = remisePct>0 ? Math.round((sousTotal+frais)*remisePct/100) : 0;
+  const detailServices = lignes.map(l=>{
+    const t = tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};
+    const prix = Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+    const unite = l.type==="unite"?"unité(s)":"kg";
+    return `  • ${t.label} — ${l.qte} ${unite} × ${fmt(t.prix||l.prix||0)} = *${fmt(prix)} F*`;
+  }).join("\n");
   return [
     `🃏 *JOKER LAVERIE & SERVICE*`,
-    `📍 Lomé, Togo`,
+    `📍 Agoe Cacaveli, 2ème von après Batir, Lomé`,
     ``,
     `🧾 *FACTURE / REÇU*`,
     sep,
@@ -1798,26 +1829,44 @@ function buildFacture(c, tarifs) {
     `📅 Date : ${c.date}`,
     `👤 Client : *${c.client}*`,
     c.tel ? `📞 Tél : ${c.tel}` : null,
+    c.codeClient ? `🔑 Code : ${c.codeClient}` : null,
     sep,
+    `📋 *DÉTAIL DES SERVICES*`,
     ``,
-    `📋 *DÉTAIL*`,
-    `Service : ${tarif.label}`,
-    `Poids : ${c.poids} kg${c.poidsStatut==="estimated"?" (estimé)":""}`,
-    `Tarif : ${fmt(c.tarif)} FCFA/kg`,
-    `Sous-total : ${fmt(sousT)} FCFA`,
-    c.livraison ? `Livraison 🛵 : +${fmt(frais)} FCFA` : null,
+    detailServices,
     ``,
+    sousTotal!==c.total-frais+remiseMontant ? `Sous-total : ${fmt(sousTotal)} FCFA` : null,
+    frais>0 ? `🛵 Livraison : +${fmt(frais)} FCFA` : null,
+    remisePct>0 ? `🎁 Réduction (${remisePct}%) : -${fmt(remiseMontant)} FCFA` : null,
     sep,
     `💰 *TOTAL : ${fmt(c.total)} FCFA*`,
     `💳 Paiement : ${pmt.label}`,
-    `✅ Statut : ${c.paiementConfirme?"Payé ✅":"En attente"}`,
+    `✅ Statut : ${c.paiementConfirme?"Payé ✅":"En attente de paiement ⏳"}`,
     sep,
-    ``,
-    `🏅 Points gagnés : +${c.points} pts`,
+    `🏅 Points gagnés : +${c.points||0} pts`,
     ``,
     `_Merci de votre confiance !_`,
     `_JOKER Laverie — Propreté · Qualité · Fiabilité_`,
   ].filter(l=>l!==null).join("\n");
+}
+
+// ─── HELPER HTML TICKET ──────────────────────────────────
+function buildServicesHTML(c, tarifs, rowClass="row") {
+  const lignes = c.panier && c.panier.length>0 ? c.panier : [{tarifId:c.tarifId,label:c.serviceLabel,qte:c.poids,type:c.type||"kg",prix:c.tarif}];
+  const frais = c.livraison ? (c.fraisLiv||LIVRAISON_TARIF) : 0;
+  const remisePct = c.remise||0;
+  const sousTotal = lignes.reduce((s,l)=>{ const t=tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0}; return s+Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0)); },0);
+  const remiseMontant = remisePct>0 ? Math.round((sousTotal+frais)*remisePct/100) : 0;
+  const servicesRows = lignes.map(l=>{
+    const t = tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};
+    const prix = Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+    const unite = l.type==="unite"?"u.":"kg";
+    return `<div class="${rowClass}"><span>${t.label} (${l.qte}${unite})</span><span>${fmt(prix)} F</span></div>`;
+  }).join("");
+  const livraisonRow = frais>0 ? `<div class="${rowClass}"><span>🛵 Livraison</span><span>+${fmt(frais)} F</span></div>` : "";
+  const sousTotalRow = (lignes.length>1||frais>0) ? `<div class="${rowClass}" style="border-top:1px dashed #ccc;"><span>Sous-total</span><span>${fmt(sousTotal+frais)} F</span></div>` : "";
+  const remiseRow = remisePct>0 ? `<div class="${rowClass}" style="color:#16a34a;"><span>🎁 Remise (${remisePct}%)</span><span>-${fmt(remiseMontant)} F</span></div>` : "";
+  return servicesRows + livraisonRow + sousTotalRow + remiseRow;
 }
 
 // ─── HISTORIQUE FACTURES ──────────────────────────────────
@@ -2293,7 +2342,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
           <div style={{textAlign:"center",marginBottom:20}}>
             <Logo size={80} style={{margin:"0 auto 12px"}} />
             <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,letterSpacing:3}}>JOKER LAVERIE & SERVICE</h1>
-            <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</p>
+            <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>Agoe Cacaveli, 2ème von après Batir, Lomé</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
             {[{l:"CA total",v:fmt(ca)+" F",i:"💰",c:CYAN},{l:"Commandes",v:commandes.length,i:"🧺",c:BLU2},{l:"Livreurs actifs",v:livreurs.filter(l=>l.actif).length,i:"🛵",c:"#A855F7"},{l:"Alertes",v:alerts,i:"🔔",c:"#FFB800"}].map(s=>(
