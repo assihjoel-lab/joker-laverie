@@ -155,7 +155,7 @@ function PinScreen({ onSuccess, correctPin }){
 }
 
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
-function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,onBack,onDone }){
+function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,onBack,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
   const [panier,setPanier]=useState([]);  // [{tarifId,poids,qte,isKg}]
@@ -166,6 +166,20 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [ticketPrint,setTicketPrint]=useState(null);
   const [fraisLiv,setFraisLiv]=useState(LIVRAISON_TARIF_DEFAULT);
   const [remisePct,setRemisePct]=useState(0);
+  const [promoAppliquee,setPromoAppliquee]=useState(null);
+
+  // Calcul auto remise = max(promo active, remise fidélité client)
+  const todayISO = new Date().toISOString().slice(0,10);
+  const promoActive = (promos||[]).find(p=>{
+    const isActif=p.actif===true||p.actif==="true";
+    if(!isActif) return false;
+    return (!p.dateDebut||p.dateDebut<=todayISO)&&(!p.dateFin||p.dateFin>=todayISO);
+  });
+  const clientExist = (clients||[]).find(c=>c.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&c.tel===tel.trim()));
+  const niveauClient = clientExist ? getLevel(clientExist.points||0) : null;
+  const remiseFidelite = niveauClient?.remise||0;
+  const remisePromo = promoActive?.remise||0;
+  const remiseAuto = Math.max(remiseFidelite, remisePromo);
   const [estimation,setEstimation]=useState("4h");
 
   const ESTIMATIONS=[
@@ -205,7 +219,9 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       heureRetrait.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" aujourd'hui";
     const firstTarif=tarifsDisp.find(t=>t.id===panier[0]?.tarifId)||tarifsDisp[0];
     const poidsTotal=panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
-    const c={id:genId(),client:nom,tel,
+    const existingCli = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
+    const codeClient = existingCli?.codeClient || ("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
+    const c={id:genId(),client:nom,tel,codeClient,
       panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
       poids:poidsTotal, qte:1,
       poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
@@ -217,13 +233,12 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     setCommandes(p=>[c,...p]);
     if(upsertCmd) upsertCmd(c);
     if(upsertClient && nom.trim()) {
-      const existing = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
       const services=panier.map(s=>tarifsDisp.find(t=>t.id===s.tarifId)?.label||"").join(", ");
       const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:poidsTotal,statut:c.statut,service:services};
-      if(existing) {
-        upsertClient({...existing, historique:[cmdEntry,...(existing.historique||[])], totalDepense:(existing.totalDepense||0)+c.total, commandes:[cmdEntry,...(existing.commandes||[])]});
+      if(existingCli) {
+        upsertClient({...existingCli, codeClient, historique:[cmdEntry,...(existingCli.historique||[])], totalDepense:(existingCli.totalDepense||0)+c.total, commandes:[cmdEntry,...(existingCli.commandes||[])]});
       } else {
-        upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total});
+        upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total, codeClient});
       }
     }
     const detailServices=panier.map(s=>{const t=tarifsDisp.find(x=>x.id===s.tarifId);return s.isKg?`⚖️ ${t?.label}: ${s.poids||"?"}kg × ${fmt(t?.prix||0)}F`:`👕 ${t?.label}: ${s.qte} pièce(s) × ${fmt(t?.prix||0)}F`;}).join("\n");
@@ -250,7 +265,26 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         {ticket.poidsStatut==="estimated"&&<div style={{background:"#1A0D00",borderRadius:12,padding:10,marginTop:8,border:"1px solid #FFB80040"}}><p style={{color:"#FFB800",fontSize:13,fontWeight:600}}>⚖️ Poids estimé — à confirmer à la laverie</p></div>}
       </div>
       <div style={{background:CARD,borderRadius:18,padding:20,border:`1px solid ${BDR}`,marginBottom:16}}>
-        {[["N°",ticket.id],["Client",ticket.client],["Téléphone",ticket.tel||"—"],["Poids",ticket.poids+"kg"],["Service",tarif.label],["Sous-total",fmt(sousTotal)+" FCFA"],livraison?["Livraison 🛵",fmt(LIVRAISON_TARIF)+" FCFA"]:null,["TOTAL",fmt(total)+" FCFA"],["Paiement",PAIEMENTS.find(p=>p.id===ticket.paiement)?.label],["+Points","+"+pts+" 🏅"]].filter(Boolean).map(([k,v])=>(
+        {(()=>{
+          const lignes = ticket.panier&&ticket.panier.length>0?ticket.panier:[{tarifId:ticket.tarifId,label:ticket.serviceLabel,qte:ticket.poids,type:"kg",prix:ticket.tarif}];
+          const fraisT = ticket.livraison?(ticket.fraisLiv||LIVRAISON_TARIF):0;
+          const remPct = ticket.remise||0;
+          const sT = lignes.reduce((s,l)=>{const t=tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0};return s+Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));},0);
+          const remM = remPct>0?Math.round((sT+fraisT)*remPct/100):0;
+          const rows = [
+            ["N°", ticket.id],
+            ["Client", ticket.client],
+            ticket.tel?["Téléphone", ticket.tel]:null,
+            ticket.codeClient?["Code client", ticket.codeClient]:null,
+            ...lignes.map(l=>{const t=tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};const u=l.type==="unite"?"u.":"kg";return [`${t.label} (${l.qte}${u})`, fmt(Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0)))+" F"];}),
+            fraisT>0?["🛵 Livraison", "+"+fmt(fraisT)+" F"]:null,
+            remPct>0?["🎁 Remise ("+remPct+"%)", "-"+fmt(remM)+" F"]:null,
+            ["TOTAL", fmt(ticket.total)+" FCFA"],
+            ["Paiement", PAIEMENTS.find(p=>p.id===ticket.paiement)?.label||"—"],
+            ["+Points", "+"+pts+" 🏅"],
+          ].filter(Boolean);
+          return rows;
+        })().map(([k,v])=>(
           <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
@@ -269,6 +303,18 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       <button onClick={onBack} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",marginBottom:14,fontSize:14}}>← Retour</button>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:16}}>Nouvelle Commande</h2>
       <Inp label="Nom *" value={nom} onChange={e=>setNom(e.target.value)} placeholder="Aminata Mensah" />
+      {nom.trim().length>1&&remiseAuto>0&&(
+        <div style={{background:"#0D2A1A",borderRadius:12,padding:"10px 14px",marginBottom:10,border:"1px solid #4ADE8030",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>🎁</span>
+          <div style={{flex:1}}>
+            <p style={{color:"#4ADE80",fontWeight:700,fontSize:13}}>
+              {promoActive&&remisePromo>=remiseFidelite?`Promo "${promoActive.label}" : -${remisePromo}%`:niveauClient?`Fidélité ${niveauClient.label} : -${remiseFidelite}%`:"Remise disponible"}
+            </p>
+            <p style={{color:"#8892B0",fontSize:11}}>Cliquez pour appliquer</p>
+          </div>
+          <button onClick={()=>setRemisePct(remiseAuto)} style={{background:"linear-gradient(135deg,#4ADE80,#22C55E)",border:"none",borderRadius:10,padding:"7px 12px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer"}}>-{remiseAuto}% ✅</button>
+        </div>
+      )}
       <Inp label="Téléphone" value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00" />
       {/* ── Ajouter un service ── */}
       <div style={{marginBottom:12}}>
@@ -407,7 +453,9 @@ function TicketModal({ c, tarifs, onClose }){
   const tarif = tarifs?.find(t=>t.id===c.tarifId)||{label:"Service",prix:c.tarif||0};
   const pmt   = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
   const frais = c.livraison ? LIVRAISON_TARIF : 0;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(`${window.location.origin}?ticket=${c.id}`)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
+  const CLIENT_APP_URL = "https://joker-client.vercel.app/";
+  const qrTarget = c.codeClient ? `${CLIENT_APP_URL}?code=${c.codeClient}` : `${CLIENT_APP_URL}?ticket=${c.id}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrTarget)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
 
   function imprimer(){
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -415,13 +463,13 @@ function TicketModal({ c, tarifs, onClose }){
       // Sur iPhone: ouvrir le ticket dans un nouvel onglet pour partager/imprimer
       const el = document.getElementById("joker-ticket-print");
       if(!el) return;
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer;}@media print{.btn{display:none!important;}.no-print{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/><div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}<div class="row"><span>Service</span><span>${tarif.label}</span></div><div class="row"><span>Poids</span><span>${c.poids} kg</span></div><div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>${c.livraison?`<div class="row"><span>Livraison</span><span>+${fmt(frais)} FCFA</span></div>`:""}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div><div class="no-print"><button class="btn" onclick="window.print()">🖨️ Imprimer</button><button class="btn" style="background:#555;margin-top:8px;" onclick="window.close()">← Retour</button></div></body></html>`;
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer;}@media print{.btn{display:none!important;}.no-print{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, 2ème von après Batir, Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/><div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}${c.codeClient?`<div class="row"><span>Code client</span><span>${c.codeClient}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour voir vos commandes</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div><div class="no-print"><button class="btn" onclick="window.print()">🖨️ Imprimer</button><button class="btn" style="background:#555;margin-top:8px;" onclick="window.close()">← Retour</button></div></body></html>`;
       const blob = new Blob([html], {type:"text/html;charset=utf-8"});
       const url = URL.createObjectURL(blob);
       window.location.href = url;
     } else {
       // Sur PC/Android: ouvrir nouvelle fenêtre
-      const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">⚖️ Poids estimé — à confirmer</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}<div class="row"><span>Service</span><span>${tarif.label}</span></div><div class="row"><span>Poids</span><span>${c.poids} kg</span></div><div class="row"><span>Tarif</span><span>${fmt(c.tarif||0)} F/kg</span></div>${c.livraison?`<div class="row"><span>Livraison</span><span>+${fmt(frais)} FCFA</span></div>`:""}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour suivre votre commande</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div></body></html>`;
+      const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, 2ème von après Batir, Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">⚖️ Poids estimé — à confirmer</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}${c.codeClient?`<div class="row"><span>Code client</span><span>${c.codeClient}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour voir vos commandes</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div></body></html>`;
       const w = window.open("","_blank","width=420,height=700");
       if(w){ w.document.write(ticketHTML); w.document.close(); w.onload=()=>{w.focus();w.print();}; }
       else {
@@ -461,7 +509,7 @@ function TicketModal({ c, tarifs, onClose }){
         <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
         {c.poidsStatut==="estimated"&&<div style={{background:"#fff8e1",border:"1px solid #ffb800",borderRadius:4,padding:"4px 8px",fontSize:10,color:"#b45309",marginBottom:6}}>⚖️ Poids estimé — à confirmer</div>}
         {/* Lignes */}
-        {[["N° Ticket",c.id],["Date",c.date],["Client",c.client],c.tel?["Téléphone",c.tel]:null,["Service",tarif.label],["Poids",c.poids+" kg"],["Tarif",fmt(c.tarif||0)+" F/kg"],c.livraison?["Livraison 🛵","+"+fmt(frais)+" FCFA"]:null].filter(Boolean).map(([k,v])=>(
+        {[["N° Ticket",c.id],["Date",c.date],["Client",c.client],c.tel?["Téléphone",c.tel]:null,c.codeClient?["Code client",c.codeClient]:null,["Service",tarif.label],["Poids",c.poids+" kg"],["Tarif",fmt(c.tarif||0)+" F/kg"],c.livraison?["Livraison 🛵","+"+fmt(frais)+" FCFA"]:null].filter(Boolean).map(([k,v])=>(
           <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
             <span style={{color:"#666"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
           </div>
@@ -480,7 +528,7 @@ function TicketModal({ c, tarifs, onClose }){
         {/* QR Code */}
         <div style={{textAlign:"center"}}>
           <img src={qrUrl} width={110} height={110} alt="QR" style={{display:"block",margin:"0 auto 4px"}} />
-          <div style={{fontSize:8,color:"#999",letterSpacing:1,textTransform:"uppercase"}}>Scannez pour suivre votre commande</div>
+          <div style={{fontSize:8,color:"#999",letterSpacing:1,textTransform:"uppercase"}}>Scannez pour voir vos commandes</div>
         </div>
         <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
         <div style={{textAlign:"center",fontSize:9,color:"#999",lineHeight:1.5}}>Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div>
@@ -837,13 +885,20 @@ function GestionPromos({ promos, setPromos }){
 
   function ajouter(){
     if(!form.label||!form.remise) return;
-    setPromos(p=>[...p,{...form,id:Date.now(),remise:parseInt(form.remise)}]);
+    setPromos(p=>[...p,{...form,id:String(Date.now()),remise:parseInt(form.remise),actif:true,createdAt:todayStr()}]);
     setForm({label:"",remise:10,cible:"tous",dateDebut:"",dateFin:"",actif:true});
     setShow(false); flash("OK Promotion ajoutee !");
   }
 
-  const aujourd = todayStr();
-  const actives = (promos||[]).filter(p=>p.actif&&(!p.dateDebut||p.dateDebut<=aujourd)&&(!p.dateFin||p.dateFin>=aujourd));
+  const todayISO = new Date().toISOString().slice(0,10);
+  const actives = (promos||[]).filter(p=>{
+    const isActif = p.actif===true||p.actif==="true";
+    if(!isActif) return false;
+    const debutOk = !p.dateDebut||p.dateDebut<=todayISO;
+    const finOk   = !p.dateFin  ||p.dateFin  >=todayISO;
+    return debutOk&&finOk;
+  });
+  const toutes = (promos||[]);
 
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -882,18 +937,30 @@ function GestionPromos({ promos, setPromos }){
           <Btn label="Ajouter la promotion" onClick={ajouter} disabled={!form.label||!form.remise} />
         </div>
       )}
-      {actives.length>0&&(
+      {toutes.length===0&&!show&&(
+        <p style={{color:"#8892B0",textAlign:"center",padding:"24px 0",fontSize:14}}>Aucune promotion. Cliquez "+ Créer" pour en ajouter.</p>
+      )}
+      {toutes.length>0&&(
         <div style={{marginBottom:14}}>
-          <p style={{color:"#4ADE80",fontWeight:700,fontSize:13,marginBottom:8}}>{actives.length} promotion(s) active(s)</p>
-          {actives.map(p=>(
-            <div key={p.id} style={{background:"#0D2A1A",borderRadius:14,padding:"12px 16px",marginBottom:8,border:"1px solid #4ADE8030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <p style={{fontWeight:700,color:"#F8FAFF"}}>{p.label}</p>
-                <p style={{fontSize:12,color:"#4ADE80"}}>-{p.remise}% {p.dateDebut&&p.dateFin?`${p.dateDebut} au ${p.dateFin}`:""}</p>
+          <p style={{color:"#8892B0",fontWeight:700,fontSize:12,marginBottom:8,letterSpacing:1,textTransform:"uppercase"}}>{actives.length} active(s) · {toutes.length} au total</p>
+          {toutes.slice().reverse().map(p=>{
+            const isActif=p.actif===true||p.actif==="true";
+            return (
+              <div key={p.id} style={{background:isActif?"#0D2A1A":CARD,borderRadius:14,padding:"12px 16px",marginBottom:8,border:`1px solid ${isActif?"#4ADE8030":BDR}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                    <p style={{fontWeight:700,color:"#F8FAFF",fontSize:14}}>{p.label}</p>
+                    <span style={{background:isActif?"#4ADE8020":"#FF444420",color:isActif?"#4ADE80":"#FF6B6B",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:700}}>{isActif?"✅ Active":"⏸ Inactive"}</span>
+                  </div>
+                  <p style={{fontSize:12,color:isActif?"#4ADE80":"#8892B0"}}>-{p.remise}% {p.dateDebut?`du ${p.dateDebut}`:""}{p.dateFin?` au ${p.dateFin}`:""}</p>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button onClick={()=>setPromos(pr=>pr.map(x=>x.id===p.id?{...x,actif:!(x.actif===true||x.actif==="true")}:x))} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:8,padding:"5px 10px",color:"#8892B0",cursor:"pointer",fontSize:12}}>{isActif?"Pause":"Activer"}</button>
+                  <button onClick={()=>setPromos(pr=>pr.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#FF4444",cursor:"pointer",fontSize:18}}>✕</button>
+                </div>
               </div>
-              <button onClick={()=>setPromos(pr=>pr.filter(x=>x.id!==p.id))} style={{background:"none",border:"none",color:"#FF4444",cursor:"pointer",fontSize:18}}>X</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -1738,14 +1805,26 @@ function Reglages({ gerantPin,setGerantPin,adminPw,setAdminPw }){
 
 // ─── GÉNÉRATION FACTURE WHATSAPP ──────────────────────────
 function buildFacture(c, tarifs) {
-  const tarif  = tarifs.find(t=>t.id===c.tarifId)||{label:"Service",prix:c.tarif};
-  const pmt    = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
-  const frais  = c.livraison ? LIVRAISON_TARIF : 0;
-  const sousT  = c.total - frais;
-  const sep    = "─────────────────────";
+  const pmt   = PAIEMENTS.find(p=>p.id===c.paiement)||{label:c.paiement||"—"};
+  const frais = c.livraison ? (c.fraisLiv||LIVRAISON_TARIF) : 0;
+  const sep   = "─────────────────────";
+  // Multi-services ou service unique
+  const lignes = c.panier && c.panier.length>0 ? c.panier : [{tarifId:c.tarifId,label:c.serviceLabel,qte:c.poids,type:c.type||"kg",prix:c.tarif}];
+  const sousTotal = lignes.reduce((s,l)=>{
+    const t = tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0};
+    return s + Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+  },0);
+  const remisePct = c.remise||0;
+  const remiseMontant = remisePct>0 ? Math.round((sousTotal+frais)*remisePct/100) : 0;
+  const detailServices = lignes.map(l=>{
+    const t = tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};
+    const prix = Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+    const unite = l.type==="unite"?"unité(s)":"kg";
+    return `  • ${t.label} — ${l.qte} ${unite} × ${fmt(t.prix||l.prix||0)} = *${fmt(prix)} F*`;
+  }).join("\n");
   return [
     `🃏 *JOKER LAVERIE & SERVICE*`,
-    `📍 Lomé, Togo`,
+    `📍 Agoe Cacaveli, 2ème von après Batir, Lomé`,
     ``,
     `🧾 *FACTURE / REÇU*`,
     sep,
@@ -1753,26 +1832,44 @@ function buildFacture(c, tarifs) {
     `📅 Date : ${c.date}`,
     `👤 Client : *${c.client}*`,
     c.tel ? `📞 Tél : ${c.tel}` : null,
+    c.codeClient ? `🔑 Code : ${c.codeClient}` : null,
     sep,
+    `📋 *DÉTAIL DES SERVICES*`,
     ``,
-    `📋 *DÉTAIL*`,
-    `Service : ${tarif.label}`,
-    `Poids : ${c.poids} kg${c.poidsStatut==="estimated"?" (estimé)":""}`,
-    `Tarif : ${fmt(c.tarif)} FCFA/kg`,
-    `Sous-total : ${fmt(sousT)} FCFA`,
-    c.livraison ? `Livraison 🛵 : +${fmt(frais)} FCFA` : null,
+    detailServices,
     ``,
+    sousTotal!==c.total-frais+remiseMontant ? `Sous-total : ${fmt(sousTotal)} FCFA` : null,
+    frais>0 ? `🛵 Livraison : +${fmt(frais)} FCFA` : null,
+    remisePct>0 ? `🎁 Réduction (${remisePct}%) : -${fmt(remiseMontant)} FCFA` : null,
     sep,
     `💰 *TOTAL : ${fmt(c.total)} FCFA*`,
     `💳 Paiement : ${pmt.label}`,
-    `✅ Statut : ${c.paiementConfirme?"Payé ✅":"En attente"}`,
+    `✅ Statut : ${c.paiementConfirme?"Payé ✅":"En attente de paiement ⏳"}`,
     sep,
-    ``,
-    `🏅 Points gagnés : +${c.points} pts`,
+    `🏅 Points gagnés : +${c.points||0} pts`,
     ``,
     `_Merci de votre confiance !_`,
     `_JOKER Laverie — Propreté · Qualité · Fiabilité_`,
   ].filter(l=>l!==null).join("\n");
+}
+
+// ─── HELPER HTML TICKET ──────────────────────────────────
+function buildServicesHTML(c, tarifs, rowClass="row") {
+  const lignes = c.panier && c.panier.length>0 ? c.panier : [{tarifId:c.tarifId,label:c.serviceLabel,qte:c.poids,type:c.type||"kg",prix:c.tarif}];
+  const frais = c.livraison ? (c.fraisLiv||LIVRAISON_TARIF) : 0;
+  const remisePct = c.remise||0;
+  const sousTotal = lignes.reduce((s,l)=>{ const t=tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0}; return s+Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0)); },0);
+  const remiseMontant = remisePct>0 ? Math.round((sousTotal+frais)*remisePct/100) : 0;
+  const servicesRows = lignes.map(l=>{
+    const t = tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};
+    const prix = Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+    const unite = l.type==="unite"?"u.":"kg";
+    return `<div class="${rowClass}"><span>${t.label} (${l.qte}${unite})</span><span>${fmt(prix)} F</span></div>`;
+  }).join("");
+  const livraisonRow = frais>0 ? `<div class="${rowClass}"><span>🛵 Livraison</span><span>+${fmt(frais)} F</span></div>` : "";
+  const sousTotalRow = (lignes.length>1||frais>0) ? `<div class="${rowClass}" style="border-top:1px dashed #ccc;"><span>Sous-total</span><span>${fmt(sousTotal+frais)} F</span></div>` : "";
+  const remiseRow = remisePct>0 ? `<div class="${rowClass}" style="color:#16a34a;"><span>🎁 Remise (${remisePct}%)</span><span>-${fmt(remiseMontant)} F</span></div>` : "";
+  return servicesRows + livraisonRow + sousTotalRow + remiseRow;
 }
 
 // ─── HISTORIQUE FACTURES ──────────────────────────────────
@@ -2248,7 +2345,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
           <div style={{textAlign:"center",marginBottom:20}}>
             <Logo size={80} style={{margin:"0 auto 12px"}} />
             <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,letterSpacing:3}}>JOKER LAVERIE & SERVICE</h1>
-            <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>PROPRETÉ · QUALITÉ · FIABILITÉ · Lomé</p>
+            <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>Agoe Cacaveli, 2ème von après Batir, Lomé</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
             {[{l:"CA total",v:fmt(ca)+" F",i:"💰",c:CYAN},{l:"Commandes",v:commandes.length,i:"🧺",c:BLU2},{l:"Livreurs actifs",v:livreurs.filter(l=>l.actif).length,i:"🛵",c:"#A855F7"},{l:"Alertes",v:alerts,i:"🔔",c:"#FFB800"}].map(s=>(
@@ -2271,7 +2368,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
