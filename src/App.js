@@ -599,8 +599,15 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
   const [editFrais,setEditFrais]=useState(false);
   const [nvFrais,setNvFrais]=useState(String(c.livraisonFrais||LIVRAISON_TARIF_DEFAULT));
   const nextLabel={"En cours":"✅ Prêt","Prêt":"📦 Rendu"};
+  const needsAttention = (c.statut==="Prêt"&&!c.paiementConfirme) || (c.typeRamassage&&c.livraisonStatut==="pending");
+
   return (
-    <div style={{background:CARD,borderRadius:20,padding:16,marginBottom:12,border:`1px solid ${c.poidsStatut==="estimated"?"rgba(255,184,0,0.25)":BDR}`}}>
+    <div style={{background:CARD,borderRadius:20,padding:16,marginBottom:12,border:`1px solid ${needsAttention?"#FF6B35":c.poidsStatut==="estimated"?"rgba(255,184,0,0.25)":BDR}`,position:"relative"}}>
+      {needsAttention&&(
+        <div style={{position:"absolute",top:-8,right:12,background:c.typeRamassage&&c.livraisonStatut==="pending"?"#FF6B35":CYAN,color:"#0A0F1E",borderRadius:99,fontSize:10,fontWeight:700,padding:"3px 10px",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}>
+          {c.typeRamassage&&c.livraisonStatut==="pending"?"🧺 Nouveau ramassage":"💰 À encaisser"}
+        </div>
+      )}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
         <div style={{flex:1}}>
           <p style={{fontWeight:700,fontSize:15}}>{c.client} {c.typeRamassage&&<span style={{background:"#FF6B3520",color:"#FF6B35",borderRadius:6,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>🧺 RAMASSAGE</span>}</p>
@@ -1526,8 +1533,14 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
       {filtered.map(c=>{
         const lv=getLevel(c.points);
         const isOpen=sel===c.id;
+        const hasReward=rewards.some(r=>c.points>=r.pts);
         return (
-          <div key={c.id}>
+          <div key={c.id} style={{position:"relative"}}>
+            {hasReward&&!isOpen&&(
+              <div style={{position:"absolute",top:-8,right:12,zIndex:1,background:"#FFB800",color:"#0A0F1E",borderRadius:99,fontSize:10,fontWeight:700,padding:"3px 10px",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}>
+                🎁 Récompense dispo
+              </div>
+            )}
             <div onClick={()=>setSel(isOpen?null:c.id)} style={{background:isOpen?"#0D1F6E":CARD,borderRadius:isOpen?"18px 18px 0 0":18,padding:16,marginBottom:isOpen?0:10,border:`1px solid ${isOpen?BLU2:BDR}`,cursor:"pointer"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div style={{display:"flex",alignItems:"center",gap:12}}>
