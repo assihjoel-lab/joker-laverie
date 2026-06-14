@@ -240,7 +240,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       poids:poidsTotal, qte:1,
       poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
       tarifId:firstTarif.id,tarif:firstTarif.prix,tarifType:firstTarif.type||"kg",
-      total,statut:"En cours",date:todayStr(),
+      total,statut:"En cours",date:todayStr(),createdAt:Date.now(),
       points:pts,paiement:paiement.id,livraison,adresse,fraisLiv:livraison?fraisLiv:0,remise:remisePct,
       livraisonStatut:livraison?"pending":null,livreurNom:null,livreurTel:null,paiementConfirme:false,
       estimation:est.id,heureRetrait:heureRetrait.toISOString(),dureeEstimee:est.label};
@@ -1211,6 +1211,8 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const caTotal=filtered.reduce((s,c)=>s+c.total,0);
   const ca=filtered.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
   const caEnAttente=caTotal-ca;
+  const nbPaye=filtered.filter(c=>c.paiementConfirme).length;
+  const nbNonPaye=filtered.length-nbPaye;
   const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).length}));
   const maxPmt=Math.max(...byPmt.map(p=>p.total),1);
 
@@ -1286,13 +1288,21 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
         ))}
       </div>
       <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:22,padding:22,marginBottom:14,border:"1px solid rgba(0,194,255,0.3)",textAlign:"center"}}>
-        <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{period==="today"?"CA du jour":period==="week"?"CA 7 jours":period==="month"?"CA 30 jours":"CA total"}</p>
-        <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:44,color:CYAN,letterSpacing:2,lineHeight:1}}>{fmt(ca)} FCFA</p>
-        <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:4,marginBottom:4}}>
-          <span style={{fontSize:11,color:"#4ADE80",fontWeight:700}}>✅ {fmt(ca)} encaissés</span>
-          <span style={{fontSize:11,color:"#FFB800",fontWeight:700}}>⏳ {fmt(caEnAttente)} en attente</span>
+        <p style={{color:"#8892B0",fontSize:12,letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>{period==="today"?"Total théorique du jour":period==="week"?"Total théorique 7 jours":period==="month"?"Total théorique 30 jours":"Total théorique"}</p>
+        <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:44,color:CYAN,letterSpacing:2,lineHeight:1}}>{fmt(caTotal)} FCFA</p>
+        <p style={{color:"#8892B0",fontSize:11,marginTop:4}}>Ce que vous devriez normalement avoir · {filtered.length} commande(s)</p>
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <div style={{flex:1,background:"#0D3B2E",borderRadius:14,padding:"10px 8px",border:"1px solid #4ADE8040"}}>
+            <p style={{fontSize:11,color:"#4ADE80",fontWeight:700,marginBottom:2}}>✅ Encaissé</p>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#4ADE80"}}>{fmt(ca)} F</p>
+            <p style={{fontSize:11,color:"#8892B0"}}>{nbPaye} commande(s)</p>
+          </div>
+          <div style={{flex:1,background:"#3B2E0D",borderRadius:14,padding:"10px 8px",border:"1px solid #FFB80040"}}>
+            <p style={{fontSize:11,color:"#FFB800",fontWeight:700,marginBottom:2}}>⏳ Reste à percevoir</p>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#FFB800"}}>{fmt(caEnAttente)} F</p>
+            <p style={{fontSize:11,color:"#8892B0"}}>{nbNonPaye} commande(s)</p>
+          </div>
         </div>
-        <p style={{color:BLU2,fontSize:12}}>{filtered.filter(c=>c.paiementConfirme).length}/{filtered.length} commande(s) payées</p>
       </div>
 
       {/* ── OBJECTIF JOURNALIER ── */}
@@ -2495,7 +2505,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
           <input
             value={cmdSearch}
             onChange={e=>setCmdSearch(e.target.value)}
-            placeholder="🔍 Rechercher client ou N° ticket…"
+            placeholder="🔍 Rechercher client, N° ticket ou date…"
             style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"12px 15px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}}
           />
 
@@ -2509,18 +2519,29 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
             ))}
           </div>
 
-          {/* Liste filtrée */}
+          {/* Liste filtrée, triée par date d'arrivée (la plus récente en premier), groupée par jour */}
           {(()=>{
             const liste = commandes.filter(c=>{
               const matchStatut = cmdFilter==="Tous" || c.statut===cmdFilter;
               const terme = cmdSearch.toLowerCase().trim();
-              const matchSearch = !terme || c.client.toLowerCase().includes(terme) || c.id.toLowerCase().includes(terme) || (c.tel&&c.tel.includes(terme));
+              const matchSearch = !terme || c.client.toLowerCase().includes(terme) || c.id.toLowerCase().includes(terme) || (c.tel&&c.tel.includes(terme)) || (c.date&&c.date.toLowerCase().includes(terme));
               return matchStatut && matchSearch;
-            });
+            }).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
             if(liste.length===0) return <p style={{color:"#8892B0",textAlign:"center",marginTop:20}}>Aucune commande trouvée.</p>;
-            return liste.map(c=>(
-              <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} />
-            ));
+            const elements=[];
+            let lastDate=null;
+            liste.forEach(c=>{
+              if(c.date!==lastDate){
+                elements.push(
+                  <p key={"date-"+c.date+"-"+c.id} style={{fontSize:11,color:"#8892B0",letterSpacing:2,textTransform:"uppercase",marginTop:14,marginBottom:8}}>📅 {c.date}</p>
+                );
+                lastDate=c.date;
+              }
+              elements.push(
+                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} />
+              );
+            });
+            return elements;
           })()}
         </div>
       )}
