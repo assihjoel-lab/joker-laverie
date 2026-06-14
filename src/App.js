@@ -160,6 +160,8 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [tel,setTel]=useState("");
   const [codeParrain,setCodeParrain]=useState("");
   const [parrainValide,setParrainValide]=useState(null);
+  const [showSuggestions,setShowSuggestions]=useState(false);
+  const [servicesOpen,setServicesOpen]=useState(false);
   const [panier,setPanier]=useState([]);  // [{tarifId,poids,qte,isKg}]
   const [paiement,setPaiement]=useState(PAIEMENTS[0]);
   const [livraison,setLiv]=useState(null);
@@ -321,7 +323,41 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <button onClick={onBack} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",marginBottom:14,fontSize:14}}>← Retour</button>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:16}}>Nouvelle Commande</h2>
-      <Inp label="Nom *" value={nom} onChange={e=>setNom(e.target.value)} placeholder="Aminata Mensah" />
+      {/* ── Recherche client avec autocomplétion ── */}
+      <div style={{marginBottom:12,position:"relative"}}>
+        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Nom *</label>
+        <input
+          value={nom}
+          onChange={e=>{setNom(e.target.value);setShowSuggestions(true);}}
+          onFocus={()=>setShowSuggestions(true)}
+          onBlur={()=>setTimeout(()=>setShowSuggestions(false),180)}
+          placeholder="Aminata Mensah"
+          style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:13,padding:"13px 15px",color:"#F8FAFF",fontSize:14,outline:"none"}}
+        />
+        {showSuggestions && nom.trim().length>0 && (()=>{
+          const suggestions=(clients||[]).filter(c=>c.nom?.toLowerCase().includes(nom.trim().toLowerCase())).slice(0,6);
+          if(!suggestions.length) return null;
+          return (
+            <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:999,background:"#141E35",border:`1px solid ${BLU2}60`,borderRadius:13,marginTop:4,overflow:"hidden",boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}>
+              {suggestions.map(c=>(
+                <div key={c.id} onMouseDown={()=>{setNom(c.nom);setTel(c.tel&&c.tel!=="—"?c.tel:"");setShowSuggestions(false);}}
+                  style={{padding:"12px 16px",cursor:"pointer",borderBottom:`1px solid ${BDR}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#1A3EBD22"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div>
+                    <p style={{color:"#F8FAFF",fontWeight:700,fontSize:14,margin:0}}>{c.nom}</p>
+                    <p style={{color:"#8892B0",fontSize:12,margin:0}}>{c.tel&&c.tel!=="—"?c.tel:"Pas de tél."} · {c.codeClient||""}</p>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{color:BLU2,fontSize:11,margin:0}}>{c.points||0} pts</p>
+                    <p style={{color:"#4ADE80",fontSize:11,margin:0}}>{c.commandes?.length||0} cmd</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
       {nom.trim().length>1&&remiseAuto>0&&(
         <div style={{background:"#0D2A1A",borderRadius:12,padding:"10px 14px",marginBottom:10,border:"1px solid #4ADE8030",display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:18}}>🎁</span>
@@ -334,7 +370,11 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           <button onClick={()=>setRemisePct(remiseAuto)} style={{background:"linear-gradient(135deg,#4ADE80,#22C55E)",border:"none",borderRadius:10,padding:"7px 12px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer"}}>-{remiseAuto}% ✅</button>
         </div>
       )}
-      <Inp label="Téléphone" value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00" />
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Téléphone</label>
+        <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="+228 90 00 00 00"
+          style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:13,padding:"13px 15px",color:"#F8FAFF",fontSize:14,outline:"none"}} />
+      </div>
 
       {/* Code de parrainage */}
       <div style={{marginBottom:14}}>
@@ -349,27 +389,33 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           <p style={{color:"#4ADE80",fontSize:12,marginTop:6}}>✅ Parrain : {parrainValide.nom} — 10% de réduction sera appliquée !</p>
         )}
       </div>
-      {/* ── Ajouter un service ── */}
+      {/* ── Ajouter un service (dropdown) ── */}
       <div style={{marginBottom:12}}>
-        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>Ajouter un service</label>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {tarifsDisp.map(tr=>{
-            const trKg=(tr.type||"kg")==="kg";
-            return (
-              <div key={tr.id} onClick={()=>addService(tr.id)}
-                style={{background:CARD,border:`1px solid ${trKg?BDR:"rgba(168,85,247,0.2)"}`,borderRadius:12,padding:"10px 14px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span>{trKg?"⚖️":"👕"}</span>
-                  <span style={{fontWeight:600,fontSize:14,color:"#F8FAFF"}}>{tr.label}</span>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <button onClick={()=>setServicesOpen(o=>!o)}
+          style={{width:"100%",background:servicesOpen?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${servicesOpen?BLU2:BDR}`,borderRadius:13,padding:"13px 16px",color:"#F8FAFF",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",transition:"all 0.2s"}}>
+          <span>➕ Ajouter un service</span>
+          <span style={{fontSize:18,transition:"transform 0.2s",display:"inline-block",transform:servicesOpen?"rotate(180deg)":"rotate(0deg)"}}>▾</span>
+        </button>
+        {servicesOpen&&(
+          <div style={{background:"#141E35",border:`1px solid ${BLU2}60`,borderRadius:13,marginTop:6,overflow:"hidden",boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}}>
+            {tarifsDisp.map((tr,i)=>{
+              const trKg=(tr.type||"kg")==="kg";
+              return (
+                <div key={tr.id}
+                  onClick={()=>{addService(tr.id);setServicesOpen(false);}}
+                  style={{padding:"12px 16px",cursor:"pointer",borderBottom:i<tarifsDisp.length-1?`1px solid ${BDR}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center",transition:"background 0.15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=trKg?"#0D1F6E44":"#3B0764AA"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontSize:18}}>{trKg?"⚖️":"👕"}</span>
+                    <span style={{fontWeight:700,fontSize:14,color:"#F8FAFF"}}>{tr.label}</span>
+                  </div>
                   <span style={{color:trKg?CYAN:"#A855F7",fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{trKg?"kg":"pièce"}</span>
-                  <span style={{color:trKg?BLU2:"#A855F7",fontWeight:900,fontSize:20,lineHeight:1}}>＋</span>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Panier ── */}
