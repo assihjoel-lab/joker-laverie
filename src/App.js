@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { useState, useEffect, useRef } from "react";
-import { signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSessionPersistence, setPersistence } from "firebase/auth";
 import { auth } from "./firebase";
 import { useFireCollection, useFireDoc } from "./hooks";
 
@@ -3077,6 +3077,7 @@ function LoginScreen({ onBack }) {
     if(!email||!pw) return;
     setLoading(true); setError("");
     try {
+      await setPersistence(auth, browserSessionPersistence);
       await signInWithEmailAndPassword(auth, email.trim(), pw);
     } catch(err) {
       const m = {
