@@ -314,7 +314,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         <button onClick={()=>setTicketPrint(ticket)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>🖨️ Imprimer le ticket</button>        {ticket.tel&&<button onClick={()=>sendWhatsApp(ticket.tel, buildFacture(ticket, tarifs))} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:14,color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture WhatsApp</button>}
-        <Btn label="Voir les commandes →" onClick={onDone} />
+        <Btn label="Voir les commandes →" onClick={()=>onDone(ticket)} />
       </div>
     </div>
   );
@@ -2324,8 +2324,23 @@ function ClientsDB({ commandes }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,onLogout}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,employes,upsertEmploye,removeEmploye,journal,upsertJournal,employeInitial,onLogout}){
   const [tab,setTab]=useState("home");
+  const [employeActif, setEmployeActif] = useState(employeInitial||null); // {id, nom, pin}
+
+  function logAction(type, detail) {
+    if (!employeActif) return;
+    upsertJournal({
+      id: "j_" + Date.now(),
+      employeId:  employeActif.id,
+      employeNom: employeActif.nom,
+      type,
+      detail,
+      date: todayStr(),
+      heure: new Date().toLocaleTimeString("fr-FR", {hour:"2-digit",minute:"2-digit"}),
+      ts: Date.now(),
+    });
+  }
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
   const pendingLivs = commandes.filter(c=>c.livraisonStatut==="pending");
@@ -2388,6 +2403,8 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
   const ca=commandes.reduce((s,c)=>s+c.total,0);
 
   function nextStatut(id){
+    const cmdTarget = commandes.find(c=>c.id===id);
+    if(cmdTarget){ const m={"En cours":"Prêt","Prêt":"Récupéré"}; logAction("statut", `${cmdTarget.client} · ${cmdTarget.id} → ${m[cmdTarget.statut]||cmdTarget.statut}`); }
     setCommandes(p=>p.map(c=>{
       if(c.id!==id) return c;
       const m={"En cours":"Prêt","Prêt":"Récupéré"};
@@ -2441,9 +2458,9 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
   }
   function notifyReady(c){if(c.tel)sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\n🎉 Votre linge est prêt !\n\n🎫 ${c.id}\n👤 ${c.client}\n\nLomé, Togo 🙏`);}
   function deleteCommande(id){
-    // Suppression directe dans Firebase
+    const cmdDel = commandes.find(c=>c.id===id);
+    if(cmdDel) logAction("suppression", `${cmdDel.client} · ${cmdDel.id} · ${fmt(cmdDel.total)} F`);
     removeCmd(String(id));
-    // Mise à jour locale
     setCommandes(p=>p.filter(c=>c.id!==id));
   }
   const [ticketModal,setTicketModal]=useState(null);
@@ -2452,6 +2469,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       if(c.id!==id)return c;
       const updated={...c,paiement:mode,paiementConfirme:true};
       upsertCmd(updated);
+      logAction("paiement", `${c.client} · ${c.id} · ${fmt(c.total)} F · ${mode}`);
 
       // ── Programme de parrainage : récompense à la 1ère commande payée ──
       const cli = (clients||[]).find(cl=>(cl.codeClient&&cl.codeClient===updated.codeClient) || cl.nom?.toLowerCase()===updated.client?.toLowerCase());
@@ -2531,7 +2549,13 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
       <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${BDR}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <Logo size={30} />
-        <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:14,letterSpacing:2,color:BLU2}}>GÉRANT</span>
+        {employeActif
+          ? <div style={{display:"flex",alignItems:"center",gap:6,background:"#0D1F6E22",borderRadius:20,padding:"4px 10px",border:"1px solid #1A3EBD44"}}>
+              <span style={{fontSize:16}}>{employeActif.emoji||"👤"}</span>
+              <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:13,letterSpacing:1,color:"#4A7BF7"}}>{employeActif.nom}</span>
+            </div>
+          : <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:14,letterSpacing:2,color:BLU2}}>GÉRANT</span>
+        }
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <button onClick={()=>window.location.reload()} title="Actualiser" style={{background:"none",border:`1px solid ${BDR}`,borderRadius:8,color:BLU2,cursor:"pointer",fontSize:16,width:30,height:30,display:"flex",alignItems:"center",justifyContent:"center"}}>🔄</button>
           <button onClick={onLogout} style={{background:"none",border:"none",color:"#FF6B6B",cursor:"pointer",fontSize:12,fontWeight:700}}>🚪 Quitter</button>
@@ -2566,7 +2590,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} onBack={()=>setTab("home")} onDone={()=>setTab("commandes")} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} onBack={()=>setTab("home")} onDone={(cmdInfo)=>{if(cmdInfo) logAction("commande", `${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);setTab("commandes");}} employeActif={employeActif} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -2639,6 +2663,8 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
             {id:"friperie",  icon:"👗", label:"Friperie",              sub:"Gérer les articles"},
             {id:"factures",  icon:"🧾", label:"Factures",             sub:"Historique et envoi WhatsApp"},
             {id:"reglages",  icon:"⚙️", label:"Réglages & Sécurité",  sub:"PIN, mots de passe, mobile money"},
+            {id:"employes",  icon:"👥", label:"Employés & PIN",          sub:"Gérer les accès par employé"},
+            {id:"journal",   icon:"📋", label:"Journal des actions",      sub:"Traçabilité par employé"},
           ].map(m=>(
             <button key={m.id} onClick={()=>setTab(m.id)} style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:16,padding:"16px",marginBottom:10,display:"flex",alignItems:"center",gap:14,cursor:"pointer",textAlign:"left"}}>
               <div style={{width:46,height:46,borderRadius:12,background:`${BLU}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{m.icon}</div>
@@ -2786,6 +2812,12 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
       {tab==="reglages"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Reglages gerantPin={gerantPin} setGerantPin={setGerantPin} adminPw={adminPw} setAdminPw={setAdminPw} /></div>
       )}
+      {tab==="employes"&&(
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionEmployes employes={employes||[]} upsertEmploye={upsertEmploye} removeEmploye={removeEmploye} /></div>
+      )}
+      {tab==="journal"&&(
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><JournalActions journal={journal||[]} employes={employes||[]} /></div>
+      )}
 
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${BDR}`,display:"flex",justifyContent:"space-around",padding:"10px 0 18px",zIndex:100}}>
         {tabs.map(tb=>(
@@ -2810,6 +2842,262 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
   );
 }
 
+
+
+// ─── SÉLECTION EMPLOYÉ ────────────────────────────────────
+function ChoixEmploye({ employes, onChoix, onGerant }) {
+  const [sel, setSel]     = useState(null); // employe selectionné
+  const [pin, setPin]     = useState("");
+  const [err, setErr]     = useState(false);
+  const BLU="#1A3EBD",BLU2="#4A7BF7",CYAN="#00C2FF",CARD="#0D1F6E22",BDR="#1A3EBD44",DARK="#060D1F";
+
+  function tryPin() {
+    if (!sel) return;
+    if (pin === sel.pin) { onChoix(sel); }
+    else { setErr(true); setTimeout(()=>{ setPin(""); setErr(false); }, 800); }
+  }
+
+  function pressDigit(d) {
+    if (pin.length >= 4) return;
+    const next = pin + d;
+    setPin(next);
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (next === sel.pin) { onChoix(sel); }
+        else { setErr(true); setTimeout(()=>{ setPin(""); setErr(false); }, 800); }
+      }, 120);
+    }
+  }
+
+  if (sel) return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:DARK,padding:24}}>
+      <div style={{width:"100%",maxWidth:340,animation:"fadeIn 0.3s ease"}}>
+        <button onClick={()=>{setSel(null);setPin("");setErr(false);}} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:14,marginBottom:20}}>← Changer d'employé</button>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{width:72,height:72,borderRadius:20,background:`${BLU}40`,border:`2px solid ${BLU2}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 12px"}}>{sel.emoji||"👤"}</div>
+          <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2}}>{sel.nom}</p>
+          <p style={{color:"#8892B0",fontSize:13,marginTop:4}}>Entrez votre PIN à 4 chiffres</p>
+        </div>
+        {/* Points PIN */}
+        <div style={{display:"flex",justifyContent:"center",gap:16,marginBottom:28}}>
+          {[0,1,2,3].map(i=>(
+            <div key={i} style={{width:16,height:16,borderRadius:"50%",background:pin.length>i?(err?"#FF4444":BLU2):"#1A2240",border:`2px solid ${pin.length>i?(err?"#FF4444":BLU2):BDR}`,transition:"all 0.15s"}} />
+          ))}
+        </div>
+        {/* Clavier numérique */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:16}}>
+          {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>(
+            <button key={i} onClick={()=>{ if(d==="⌫") setPin(p=>p.slice(0,-1)); else if(d!=="") pressDigit(String(d)); }}
+              style={{height:64,borderRadius:16,background:d===""?"transparent":d==="⌫"?"#1A2240":CARD,border:d===""?"none":`1px solid ${BDR}`,color:d==="⌫"?"#FF6B6B":"#F8FAFF",fontSize:22,fontWeight:700,cursor:d===""?"default":"pointer",transition:"background 0.1s"}}
+              onMouseDown={e=>{ if(d!=="") e.currentTarget.style.background="#1A3EBD44"; }}
+              onMouseUp={e=>{ if(d!=="") e.currentTarget.style.background=d==="⌫"?"#1A2240":CARD; }}
+            >{d}</button>
+          ))}
+        </div>
+        {err&&<p style={{color:"#FF6B6B",textAlign:"center",fontWeight:700,fontSize:14,animation:"fadeIn 0.2s"}}>❌ PIN incorrect</p>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:DARK,padding:24}}>
+      <div style={{width:"100%",maxWidth:380,animation:"fadeIn 0.4s ease"}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <Logo size={64} style={{margin:"0 auto 12px"}} />
+          <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3,color:BLU2}}>QUI TRAVAILLE ?</p>
+          <p style={{color:"#8892B0",fontSize:13,marginTop:4}}>Sélectionnez votre nom pour continuer</p>
+        </div>
+        {employes.length === 0 ? (
+          <div style={{background:CARD,borderRadius:18,padding:24,border:`1px solid ${BDR}`,textAlign:"center",marginBottom:16}}>
+            <p style={{fontSize:32,marginBottom:8}}>👤</p>
+            <p style={{color:"#8892B0",fontSize:14}}>Aucun employé configuré.<br/>Connectez-vous en tant que gérant pour en ajouter.</p>
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+            {employes.map(e=>(
+              <button key={e.id} onClick={()=>setSel(e)}
+                style={{background:CARD,border:`1px solid ${BDR}`,borderRadius:18,padding:"16px 20px",cursor:"pointer",display:"flex",alignItems:"center",gap:14,textAlign:"left",width:"100%"}}>
+                <div style={{width:48,height:48,borderRadius:14,background:`${BLU}40`,border:`1px solid ${BLU2}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{e.emoji||"👤"}</div>
+                <div>
+                  <p style={{fontWeight:700,fontSize:16,color:"#F8FAFF"}}>{e.nom}</p>
+                  <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>{e.role||"Employé"}</p>
+                </div>
+                <span style={{color:"#8892B0",marginLeft:"auto",fontSize:20}}>›</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <button onClick={onGerant}
+          style={{width:"100%",background:"none",border:`1px solid ${BDR}`,borderRadius:16,padding:"14px",color:"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          🔐 Accès gérant (email + mot de passe)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── GESTION EMPLOYÉS (panneau admin) ─────────────────────
+function GestionEmployes({ employes, upsertEmploye, removeEmploye }) {
+  const BLU="#1A3EBD",BLU2="#4A7BF7",CYAN="#00C2FF",CARD="#0D1F6E22",BDR="#1A3EBD44",DARK="#060D1F";
+  const EMOJIS=["👤","👩","👨","🧑","👩‍💼","👨‍💼","🧑‍💼","💁","🙋","🤵"];
+  const ROLES=["Employé","Caissier","Laveur","Livreur","Responsable"];
+  const [showAdd, setShowAdd] = useState(false);
+  const [form,    setForm]    = useState({nom:"",pin:"",role:"Employé",emoji:"👤"});
+  const [editing, setEditing] = useState(null);
+  const [msg,     setMsg]     = useState("");
+  function flash(m){setMsg(m);setTimeout(()=>setMsg(""),2500);}
+
+  function save() {
+    if (!form.nom || form.pin.length!==4 || isNaN(form.pin)) { flash("❌ Nom + PIN 4 chiffres requis"); return; }
+    if (editing) {
+      upsertEmploye({...editing,...form,id:editing.id});
+      setEditing(null);
+    } else {
+      if(employes.find(e=>e.pin===form.pin)){flash("❌ Ce PIN est déjà utilisé");return;}
+      upsertEmploye({...form,id:"emp_"+Date.now()});
+    }
+    setForm({nom:"",pin:"",role:"Employé",emoji:"👤"}); setShowAdd(false);
+    flash(editing?"✅ Employé mis à jour !":"✅ Employé ajouté !");
+  }
+
+  function startEdit(e){setEditing(e);setForm({nom:e.nom,pin:e.pin,role:e.role||"Employé",emoji:e.emoji||"👤"});setShowAdd(true);}
+
+  const inp={width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"12px 14px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10};
+
+  return (
+    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>👥 Employés</h2>
+        <button onClick={()=>{setShowAdd(s=>!s);setEditing(null);setForm({nom:"",pin:"",role:"Employé",emoji:"👤"});}}
+          style={{background:showAdd?"#1A0A0A":`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"8px 16px",color:showAdd?"#8892B0":"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+          {showAdd?"✕ Fermer":"➕ Ajouter"}
+        </button>
+      </div>
+      {msg&&<div style={{background:msg.startsWith("✅")?"#0D3B2E":"#3B0D0D",borderRadius:12,padding:"10px 16px",marginBottom:14,border:`1px solid ${msg.startsWith("✅")?CYAN+"40":"#FF444440"}`}}><p style={{color:msg.startsWith("✅")?CYAN:"#FF6B6B",fontWeight:700}}>{msg}</p></div>}
+
+      {showAdd&&(
+        <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:`1px solid ${BLU2}40`,animation:"fadeIn 0.2s ease"}}>
+          <p style={{fontWeight:700,fontSize:15,color:BLU2,marginBottom:12}}>{editing?"✏️ Modifier":"➕ Nouvel employé"}</p>
+          {/* Emoji picker */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
+            {EMOJIS.map(em=>(
+              <button key={em} onClick={()=>setForm(p=>({...p,emoji:em}))}
+                style={{width:42,height:42,borderRadius:10,background:form.emoji===em?`${BLU}60`:DARK,border:`1px solid ${form.emoji===em?BLU2:BDR}`,fontSize:20,cursor:"pointer"}}>{em}</button>
+            ))}
+          </div>
+          <input value={form.nom} onChange={e=>setForm(p=>({...p,nom:e.target.value}))} placeholder="Nom *" style={inp} />
+          <input value={form.pin} onChange={e=>setForm(p=>({...p,pin:e.target.value.replace(/\D/g,"").slice(0,4)}))} placeholder="PIN 4 chiffres *" type="password" inputMode="numeric" style={{...inp,letterSpacing:8,fontSize:22,textAlign:"center",color:CYAN}} />
+          <select value={form.role} onChange={e=>setForm(p=>({...p,role:e.target.value}))} style={{...inp,marginBottom:14}}>
+            {ROLES.map(r=><option key={r} value={r}>{r}</option>)}
+          </select>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={save} style={{flex:1,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"13px",color:"#fff",fontWeight:700,cursor:"pointer"}}>💾 {editing?"Mettre à jour":"Enregistrer"}</button>
+            <button onClick={()=>{setShowAdd(false);setEditing(null);}} style={{background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"13px 16px",color:"#8892B0",cursor:"pointer"}}>✕</button>
+          </div>
+        </div>
+      )}
+
+      {employes.length===0&&!showAdd&&(
+        <div style={{background:CARD,borderRadius:16,padding:24,textAlign:"center",border:`1px solid ${BDR}`}}>
+          <p style={{fontSize:32,marginBottom:8}}>👥</p>
+          <p style={{color:"#8892B0",fontSize:14}}>Aucun employé. Ajoutez-en un pour activer la traçabilité.</p>
+        </div>
+      )}
+
+      {employes.map(e=>(
+        <div key={e.id} style={{background:CARD,borderRadius:18,padding:"14px 16px",marginBottom:10,border:`1px solid ${BDR}`,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:48,height:48,borderRadius:14,background:`${BLU}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{e.emoji||"👤"}</div>
+          <div style={{flex:1}}>
+            <p style={{fontWeight:700,fontSize:15}}>{e.nom}</p>
+            <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>{e.role||"Employé"} · PIN : {"●".repeat(4)}</p>
+          </div>
+          <button onClick={()=>startEdit(e)} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:10,padding:"6px 10px",color:BLU2,fontSize:12,cursor:"pointer"}}>✏️</button>
+          <button onClick={()=>removeEmploye(String(e.id))} style={{background:"none",border:"none",color:"#FF4444",fontSize:18,cursor:"pointer"}}>🗑️</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── JOURNAL DES ACTIONS ──────────────────────────────────
+function JournalActions({ journal, employes }) {
+  const BLU="#1A3EBD",BLU2="#4A7BF7",CYAN="#00C2FF",CARD="#0D1F6E22",BDR="#1A3EBD44",DARK="#060D1F";
+  const [filtreEmp, setFiltreEmp] = useState("tous");
+  const [filtreType,setFiltreType]= useState("tous");
+  const TYPES={commande:{l:"Nouvelle commande",c:"#4ADE80",e:"➕"},paiement:{l:"Paiement",c:CYAN,e:"💳"},statut:{l:"Changement statut",c:BLU2,e:"🔄"},suppression:{l:"Suppression",c:"#FF6B6B",e:"🗑️"}};
+
+  const sorted = [...journal].sort((a,b)=>(b.ts||0)-(a.ts||0));
+  const filtered = sorted.filter(j=>{
+    if(filtreEmp!=="tous" && j.employeId!==filtreEmp) return false;
+    if(filtreType!=="tous" && j.type!==filtreType) return false;
+    return true;
+  });
+
+  // Stats par employé
+  const stats={};
+  journal.forEach(j=>{
+    if(!stats[j.employeId]) stats[j.employeId]={nom:j.employeNom,commande:0,paiement:0,statut:0,suppression:0};
+    stats[j.employeId][j.type]=(stats[j.employeId][j.type]||0)+1;
+  });
+
+  return (
+    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>📋 Journal des actions</h2>
+
+      {/* Stats par employé */}
+      {Object.values(stats).length>0&&(
+        <div style={{marginBottom:14}}>
+          {Object.entries(stats).map(([id,s])=>(
+            <div key={id} style={{background:CARD,borderRadius:16,padding:"12px 16px",marginBottom:8,border:`1px solid ${BDR}`}}>
+              <p style={{fontWeight:700,fontSize:14,marginBottom:8}}>{employes.find(e=>e.id===id)?.emoji||"👤"} {s.nom}</p>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+                {[["➕",s.commande,"Cmds","#4ADE80"],["💳",s.paiement,"Pmts",CYAN],["🔄",s.statut,"Statuts",BLU2],["🗑️",s.suppression,"Suppr","#FF6B6B"]].map(([e,v,l,c])=>(
+                  <div key={l} style={{background:DARK,borderRadius:10,padding:"8px 4px",textAlign:"center",border:`1px solid ${c}20`}}>
+                    <p style={{fontSize:16}}>{e}</p>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:c}}>{v}</p>
+                    <p style={{fontSize:9,color:"#8892B0"}}>{l}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filtres */}
+      <div style={{display:"flex",gap:6,marginBottom:10,overflowX:"auto",paddingBottom:4}}>
+        <button onClick={()=>setFiltreEmp("tous")} style={{flexShrink:0,background:filtreEmp==="tous"?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${filtreEmp==="tous"?BLU2:BDR}`,borderRadius:20,padding:"6px 12px",color:filtreEmp==="tous"?"#fff":"#8892B0",fontSize:11,fontWeight:700,cursor:"pointer"}}>Tous</button>
+        {employes.map(e=>(
+          <button key={e.id} onClick={()=>setFiltreEmp(e.id)} style={{flexShrink:0,background:filtreEmp===e.id?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${filtreEmp===e.id?BLU2:BDR}`,borderRadius:20,padding:"6px 12px",color:filtreEmp===e.id?"#fff":"#8892B0",fontSize:11,fontWeight:700,cursor:"pointer"}}>{e.emoji||"👤"} {e.nom}</button>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+        {[["tous","Tout","#8892B0"],["commande","➕ Cmd","#4ADE80"],["paiement","💳 Pmt",CYAN],["statut","🔄 Statut",BLU2],["suppression","🗑️ Suppr","#FF6B6B"]].map(([v,l,c])=>(
+          <button key={v} onClick={()=>setFiltreType(v)} style={{flexShrink:0,background:filtreType===v?`${c}22`:CARD,border:`1px solid ${filtreType===v?c:BDR}`,borderRadius:20,padding:"6px 12px",color:filtreType===v?c:"#8892B0",fontSize:11,fontWeight:700,cursor:"pointer"}}>{l}</button>
+        ))}
+      </div>
+
+      {/* Liste */}
+      {filtered.length===0&&<p style={{color:"#8892B0",textAlign:"center",padding:"24px 0"}}>Aucune action enregistrée.</p>}
+      {filtered.map(j=>{
+        const t=TYPES[j.type]||{l:j.type,c:"#8892B0",e:"•"};
+        return (
+          <div key={j.id} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${t.c}20`,display:"flex",gap:12,alignItems:"flex-start"}}>
+            <div style={{width:36,height:36,borderRadius:10,background:`${t.c}22`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{t.e}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                <span style={{fontSize:11,color:t.c,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{t.l}</span>
+                <span style={{fontSize:10,color:"#8892B0"}}>{j.date} {j.heure}</span>
+              </div>
+              <p style={{fontSize:13,color:"#F8FAFF",fontWeight:600,marginBottom:2}}>{employes.find(e=>e.id===j.employeId)?.emoji||"👤"} {j.employeNom}</p>
+              <p style={{fontSize:12,color:"#8892B0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{j.detail}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // ─── ÉCRAN CONNEXION ──────────────────────────────────────
 
@@ -2919,8 +3207,10 @@ export default function App(){
   const [objectifJour,   saveObjectifJour,   objReady]  = useFireDoc("config","objectif",  {montant:50000});
   const [depenses,       upsertDepense,      removeDepense, depReady] = useFireCollection("depenses", []);
   const [clotures,       upsertCloture,      removeCloture, clotReady] = useFireCollection("clotures", []);
+  const [employes,       upsertEmploye,      removeEmploye, empReady]  = useFireCollection("employes", []);
+  const [journal,        upsertJournal,      _rmJournal,    jourReady] = useFireCollection("journal",  []);
 
-  const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady;
+  const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&empReady&&jourReady;
 
   function setCommandes(fn){
     const prev = commandes;
@@ -2959,6 +3249,15 @@ export default function App(){
     </div>
   );
 
+  const [showLogin, setShowLogin] = useState(false);
+  const [employeActifApp, setEmployeActifApp] = useState(null);
+
+  if(!user && !showLogin) return (
+    allReady
+      ? <ChoixEmploye employes={employes||[]} onChoix={e=>{setEmployeActifApp(e);}} onGerant={()=>setShowLogin(true)} />
+      : <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#060D1F"}}><p style={{color:"#4A7BF7",fontSize:14}}>Chargement...</p></div>
+  );
+
   if(!user) return <LoginScreen />;
 
   if(!allReady) return (
@@ -2986,6 +3285,9 @@ export default function App(){
         objectifJour={objectifJour} saveObjectifJour={saveObjectifJour}
         gerantPin={gerantPin} setGerantPin={setGerantPin}
         adminPw={adminPw} setAdminPw={setAdminPw}
+        employes={employes} upsertEmploye={upsertEmploye} removeEmploye={removeEmploye}
+        journal={journal} upsertJournal={upsertJournal}
+        employeInitial={employeActifApp}
         onLogout={handleLogout}
       />
     </div>
