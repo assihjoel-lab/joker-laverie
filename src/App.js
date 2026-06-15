@@ -1176,7 +1176,7 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
 }
 
 // ─── CAISSE ───────────────────────────────────────────────
-function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour }){
+function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour,clotures=[],upsertCloture }){
   const [period,setPeriod]=useState("today");
   const [showDepenses,setShowDepenses]=useState(false);
   const [showObjectif,setShowObjectif]=useState(false);
@@ -1184,7 +1184,11 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const [nvDepLib,setNvDepLib]=useState("");
   const [nvDepMont,setNvDepMont]=useState("");
   const [nvDepCat,setNvDepCat]=useState("Fournitures");
+  const [showCloture,setShowCloture]=useState(false);
+  const [nvCompte,setNvCompte]=useState("");
+  const [nvNoteCloture,setNvNoteCloture]=useState("");
   const today=todayStr();
+  const todayISO=new Date().toISOString().slice(0,10);
   const CATS_DEP=["Fournitures","Eau/Électricité","Salaire","Loyer","Transport","Autre"];
 
   function getWeekDates(){
@@ -1215,6 +1219,12 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const nbNonPaye=filtered.length-nbPaye;
   const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).length}));
   const maxPmt=Math.max(...byPmt.map(p=>p.total),1);
+
+  // Clôture de caisse du jour
+  const caAujourdHui=commandes.filter(c=>c.date===today&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+  const clotureAuj=clotures.find(c=>c.dateISO===todayISO);
+  const ecartAuj=clotureAuj?clotureAuj.montantCompte-clotureAuj.encaisse:null;
+  const clotHistorique=[...clotures].sort((a,b)=>(b.dateISO||"").localeCompare(a.dateISO||""));
 
   // Grouper par date pour l'historique
   const byDate={};
@@ -1304,6 +1314,70 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
           </div>
         </div>
       </div>
+
+      {/* ── CLÔTURE DE CAISSE DU JOUR ── */}
+      <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:`1px solid ${BDR}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <p style={{fontWeight:700,fontSize:14}}>🔒 Clôture de caisse du jour</p>
+          {clotureAuj&&!showCloture&&(
+            <button onClick={()=>{setNvCompte(String(clotureAuj.montantCompte));setNvNoteCloture(clotureAuj.note||"");setShowCloture(true);}} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:10,padding:"6px 10px",color:"#8892B0",fontSize:11,cursor:"pointer"}}>✏️ Corriger</button>
+          )}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+          <span style={{fontSize:12,color:"#8892B0"}}>Encaissé selon l&apos;app aujourd&apos;hui</span>
+          <span style={{fontWeight:700,color:CYAN,fontSize:14}}>{fmt(caAujourdHui)} F</span>
+        </div>
+        {clotureAuj&&!showCloture ? (
+          <>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:12,color:"#8892B0"}}>Montant compté</span>
+              <span style={{fontWeight:700,fontSize:14}}>{fmt(clotureAuj.montantCompte)} F</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid ${BDR}`}}>
+              <span style={{fontSize:12,color:"#8892B0"}}>Écart</span>
+              <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:ecartAuj===0?"#4ADE80":"#FF6B6B"}}>{ecartAuj>0?"+":""}{fmt(ecartAuj)} F</span>
+            </div>
+            {ecartAuj!==0&&<p style={{fontSize:11,color:"#8892B0",marginTop:6}}>{ecartAuj>0?"Il y a plus d'argent compté que ce que l'app a enregistré comme encaissé.":"Il manque de l'argent par rapport à ce que l'app a enregistré comme encaissé."}</p>}
+            {clotureAuj.note&&<p style={{fontSize:11,color:"#8892B0",marginTop:6,fontStyle:"italic"}}>Note : {clotureAuj.note}</p>}
+          </>
+        ) : (
+          <div style={{animation:"fadeIn 0.2s ease"}}>
+            <input value={nvCompte} onChange={e=>setNvCompte(e.target.value)} placeholder="Montant réellement compté (FCFA)" type="number" style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:8}} />
+            <input value={nvNoteCloture} onChange={e=>setNvNoteCloture(e.target.value)} placeholder="Note (optionnel : ex. raison d'un écart)" style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",marginBottom:10}} />
+            <div style={{display:"flex",gap:8}}>
+              {clotureAuj&&<button onClick={()=>setShowCloture(false)} style={{flex:1,background:"none",border:`1px solid ${BDR}`,borderRadius:12,padding:"12px",color:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>Annuler</button>}
+              <button onClick={()=>{
+                if(nvCompte===""||upsertCloture==null)return;
+                upsertCloture({id:"clo_"+todayISO,dateISO:todayISO,date:today,encaisse:caAujourdHui,montantCompte:parseInt(nvCompte)||0,note:nvNoteCloture.trim(),createdAt:Date.now()});
+                setShowCloture(false);setNvCompte("");setNvNoteCloture("");
+              }} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>✅ Valider la clôture</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── HISTORIQUE DES CLÔTURES ── */}
+      {clotHistorique.length>0&&(
+        <>
+          <STitle text="Historique des clôtures" />
+          {clotHistorique.slice(0,14).map(c=>{
+            const ecart=c.montantCompte-c.encaisse;
+            return (
+              <div key={c.id} style={{background:CARD,borderRadius:14,padding:"12px 16px",marginBottom:8,border:`1px solid ${BDR}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                  <span style={{fontWeight:700,fontSize:13}}>📅 {c.date}</span>
+                  <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:16,color:ecart===0?"#4ADE80":"#FF6B6B"}}>{ecart>0?"+":""}{fmt(ecart)} F</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span style={{fontSize:11,color:"#8892B0"}}>Encaissé app : {fmt(c.encaisse)} F</span>
+                  <span style={{fontSize:11,color:"#8892B0"}}>Compté : {fmt(c.montantCompte)} F</span>
+                </div>
+                {c.note&&<p style={{fontSize:11,color:"#8892B0",marginTop:4,fontStyle:"italic"}}>{c.note}</p>}
+              </div>
+            );
+          })}
+        </>
+      )}
 
       {/* ── OBJECTIF JOURNALIER ── */}
       {(()=>{
@@ -2250,7 +2324,7 @@ function ClientsDB({ commandes }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,onLogout}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,onLogout}){
   const [tab,setTab]=useState("home");
   const [notifPop,setNotifPop]=useState(null);
   const notifShownRef = useState(false);
@@ -2548,7 +2622,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
 
       {tab==="livraisons"&&<GestionLivreurs livreurs={livreurs} setLivreurs={setLivreurs} commandes={commandes} setCommandes={setCommandes} />}
 
-      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} />}
+      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} clotures={clotures} upsertCloture={upsertCloture} />}
       {tab==="plus"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
@@ -2844,8 +2918,9 @@ export default function App(){
   const [statutLaverie,  saveStatutLaverie,  statReady] = useFireDoc("config","statut",    {ouvert:true,message:""});
   const [objectifJour,   saveObjectifJour,   objReady]  = useFireDoc("config","objectif",  {montant:50000});
   const [depenses,       upsertDepense,      removeDepense, depReady] = useFireCollection("depenses", []);
+  const [clotures,       upsertCloture,      removeCloture, clotReady] = useFireCollection("clotures", []);
 
-  const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady;
+  const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady;
 
   function setCommandes(fn){
     const prev = commandes;
@@ -2907,6 +2982,7 @@ export default function App(){
         paiementConfig={paiementConfig} savePaiementConfig={savePaiementConfig}
         statutLaverie={statutLaverie} saveStatutLaverie={saveStatutLaverie}
         depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense}
+        clotures={clotures} upsertCloture={upsertCloture}
         objectifJour={objectifJour} saveObjectifJour={saveObjectifJour}
         gerantPin={gerantPin} setGerantPin={setGerantPin}
         adminPw={adminPw} setAdminPw={setAdminPw}
