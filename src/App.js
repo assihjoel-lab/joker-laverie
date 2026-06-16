@@ -3221,7 +3221,7 @@ export default function App(){
  if(!user && !showLogin && !employeActifApp) return (
   allReady
     ? <ChoixEmploye employes={employes||[]} onChoix={e=>setEmployeActifApp(e)} onGerant={()=>setShowLogin(true)} />
-    : <div ...>Chargement...</div>
+    : <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#060D1F"}}><p style={{color:"#4A7BF7"}}>Chargement...</p></div>
 );
   );
 
