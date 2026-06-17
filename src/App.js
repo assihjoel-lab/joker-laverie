@@ -155,7 +155,7 @@ function PinScreen({ onSuccess, correctPin }){
 }
 
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
-function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,employeActif,onBack,onCreated,onDone }){
+function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,employeActif,produits,onAutoConsume,onBack,onCreated,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
   const [codeParrain,setCodeParrain]=useState("");
@@ -2354,7 +2354,7 @@ function ClientsDB({ commandes }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,employes,upsertEmploye,removeEmploye,journal,upsertJournal,employeInitial,onLogout}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
   const [tab,setTab]=useState("home");
   const [employeActif, setEmployeActif] = useState(employeInitial||null);
 useEffect(()=>{
@@ -2371,6 +2371,22 @@ useEffect(()=>{
       date: todayStr(),
       heure: new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),
       ts: Date.now(),
+    });
+  }
+  }
+  function mouvementStock(produitId, qte, type, note){
+    const p = produits.find(x=>x.id===produitId); if(!p) return;
+    const nouveauStock = type==="entree" ? (p.stock||0)+qte : Math.max(0,(p.stock||0)-qte);
+    upsertProduit({...p, stock: nouveauStock});
+    upsertStockMvt({
+      id: "m_"+Date.now()+"_"+Math.random().toString(36).slice(2,7),
+      produitId, produitNom: p.nom,
+      type, qte,
+      employeId: employeActif?.id||null, employeNom: employeActif?.nom||"Gérant",
+      date: todayStr(),
+      heure: new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),
+      ts: Date.now(),
+      note: note||"",
     });
   }
   const [notifPop,setNotifPop]=useState(null);
@@ -2622,7 +2638,7 @@ useEffect(()=>{
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} employeActif={employeActif} onBack={()=>setTab("home")} onCreated={(cmdInfo)=>{if(cmdInfo)logAction("commande",`${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);}} onDone={()=>setTab("commandes")} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} employeActif={employeActif} produits={produits} onAutoConsume={(produitId,qte)=>mouvementStock(produitId,qte,"auto","Auto à la création de commande")} onBack={()=>setTab("home")} onCreated={(cmdInfo)=>{if(cmdInfo)logAction("commande",`${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);}} onDone={()=>setTab("commandes")} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -3207,11 +3223,12 @@ export default function App(){
   const [depenses,       upsertDepense,      removeDepense, depReady] = useFireCollection("depenses", []);
   const [clotures,       upsertCloture,      removeCloture, clotReady] = useFireCollection("clotures", []);
   const [employes,       upsertEmploye,      removeEmploye, empReady]  = useFireCollection("employes", []);
-  const [journal,        upsertJournal,      _rmJournal,    jourReady] = useFireCollection("journal",  []);
-
+ const [journal,        upsertJournal,      _rmJournal,    jourReady] = useFireCollection("journal",  []);
+  const [produits,       upsertProduit,      removeProduit, prodReady] = useFireCollection("produits", []);
+  const [stockMvts,      upsertStockMvt,     _rmStockMvt,   stockReady]= useFireCollection("stockMvts", []);
   const [showLogin,       setShowLogin]       = useState(false);
   const [employeActifApp, setEmployeActifApp] = useState(null);
-  const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&empReady&&jourReady;
+ const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&empReady&&jourReady&&prodReady&&stockReady;
 
   function setCommandes(fn){
     const prev = commandes;
@@ -3285,6 +3302,8 @@ export default function App(){
         adminPw={adminPw} setAdminPw={setAdminPw}
         employes={employes} upsertEmploye={upsertEmploye} removeEmploye={removeEmploye}
         journal={journal} upsertJournal={upsertJournal}
+        produits={produits} upsertProduit={upsertProduit} removeProduit={removeProduit}
+        stockMvts={stockMvts} upsertStockMvt={upsertStockMvt}
         employeInitial={employeActifApp}
         onLogout={handleLogout}
       />
