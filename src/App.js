@@ -315,7 +315,13 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
           </div>
-        ))}
+       ))}
+        {ticket.note && (
+          <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.08)"}}>
+            <p style={{color:"#FFB800",fontSize:11,fontWeight:700,marginBottom:4}}>📝 Note</p>
+            <p style={{color:"#F8FAFF",fontSize:13}}>{ticket.note}</p>
+          </div>
+        )}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         <button onClick={()=>setTicketPrint(ticket)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>🖨️ Imprimer le ticket</button>        {ticket.tel&&<button onClick={()=>sendWhatsApp(ticket.tel, buildFacture(ticket, tarifs))} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:14,color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture WhatsApp</button>}
@@ -706,6 +712,16 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
           </div>
         )}
       </div>
+      </div>
+      {(c.note||(c.panier&&c.panier.some(p=>p.note))) && (
+        <div style={{background:"#1A1500",border:"1px solid #FFB80040",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+          <p style={{fontSize:11,color:"#FFB800",fontWeight:700,marginBottom:4}}>📝 Notes</p>
+          {c.note && <p style={{fontSize:12,color:"#F8FAFF",marginBottom:c.panier?.some(p=>p.note)?6:0}}>{c.note}</p>}
+          {c.panier&&c.panier.filter(p=>p.note).map((p,i)=>(
+            <p key={i} style={{fontSize:12,color:"#8892B0"}}>· {p.label}: {p.note}</p>
+          ))}
+        </div>
+      )}
       {c.livraison&&c.livraisonStatut==="pending"&&(
         <div style={{marginBottom:10}}>
           {!confirmRefus&&(
