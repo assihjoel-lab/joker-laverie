@@ -155,7 +155,7 @@ function PinScreen({ onSuccess, correctPin }){
 }
 
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
-function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,onBack,onDone }){
+function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,employeActif,onBack,onCreated,onDone }){
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
   const [codeParrain,setCodeParrain]=useState("");
@@ -236,6 +236,8 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const existingCli = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
     const codeClient = existingCli?.codeClient || ("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
     const c={id:genId(),client:nom,tel,codeClient,
+      employeId:employeActif?.id||null, employeNom:employeActif?.nom||null,
+      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
       panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
       poids:poidsTotal, qte:1,
       poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
@@ -268,8 +270,9 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
         '🃏 *JOKER Laverie & Service*\n\n✅ Votre linge a bien été déposé !\n\n🎫 Ticket : *'+c.id+'*\n👤 '+nom+'\n\n'+detailServices+'\n\n💰 *Total : '+fmt(total)+' FCFA*\n\n⏱️ *Prêt estimé : '+est.label+'*\n🕐 Récupérable '+heureStr+'\n\nVous recevrez un message dès que votre linge est prêt. 🙏'
       ),400);
     }
-    setPanier([]);
+   setPanier([]);
     setTicket(c);
+    if(onCreated) onCreated(c);
   }
 
   function waTicket(c){
