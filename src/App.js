@@ -712,7 +712,6 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
           </div>
         )}
       </div>
-      </div>
       {(c.note||(c.panier&&c.panier.some(p=>p.note))) && (
         <div style={{background:"#1A1500",border:"1px solid #FFB80040",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
           <p style={{fontSize:11,color:"#FFB800",fontWeight:700,marginBottom:4}}>📝 Notes</p>
