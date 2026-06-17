@@ -171,6 +171,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [fraisLiv,setFraisLiv]=useState(LIVRAISON_TARIF_DEFAULT);
   const [remisePct,setRemisePct]=useState(0);
   const [promoAppliquee,setPromoAppliquee]=useState(null);
+  const [noteCommande,setNoteCommande]=useState("");
 
   // Calcul auto remise = max(promo active, remise fidélité client)
   const todayISO = new Date().toISOString().slice(0,10);
@@ -201,7 +202,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   function addService(tid){
     const t=tarifsDisp.find(x=>x.id===tid); if(!t) return;
     const isKg=(t.type||"kg")==="kg";
-    setPanier(p=>[...p,{tarifId:tid,poids:"",qte:1,isKg}]);
+    setPanier(p=>[...p,{tarifId:tid,poids:"",qte:1,isKg,note:""}]);
   }
   function removeService(idx){ setPanier(p=>p.filter((_,i)=>i!==idx)); }
   function updateService(idx,field,val){ setPanier(p=>p.map((s,i)=>i===idx?{...s,[field]:val}:s)); }
@@ -237,8 +238,8 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const codeClient = existingCli?.codeClient || ("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
     const c={id:genId(),client:nom,tel,codeClient,
       employeId:employeActif?.id||null, employeNom:employeActif?.nom||null,
-      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
-      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1)})),
+      note:noteCommande||"",
+      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""})),
       poids:poidsTotal, qte:1,
       poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
       tarifId:firstTarif.id,tarif:firstTarif.prix,tarifType:firstTarif.type||"kg",
@@ -271,6 +272,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       ),400);
     }
    setPanier([]);
+    setNoteCommande("");
     setTicket(c);
     if(onCreated) onCreated(c);
   }
@@ -450,12 +452,22 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
                     <button onClick={()=>updateService(idx,"qte",(parseInt(s.qte)||1)+1)} style={{width:44,height:44,borderRadius:10,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
                     <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>× {fmt(t.prix)}F = <strong style={{color:"#A855F7"}}>{fmt(ligneTotal)}F</strong></span>
                   </div>
-                )}
+               )}
+                <input type="text" value={s.note||""} onChange={e=>updateService(idx,"note",e.target.value)}
+                  placeholder="Note (ex: tache, bouton manquant...)"
+                  style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"8px 10px",color:"#F8FAFF",fontSize:12,outline:"none",marginTop:8,boxSizing:"border-box"}} />
               </div>
             );
           })}
         </div>
       )}
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>📝 Note générale (optionnel)</label>
+        <textarea value={noteCommande} onChange={e=>setNoteCommande(e.target.value)}
+          placeholder="Ex: linge délicat, ne pas sécher en machine, vêtement décoloré..."
+          rows={2}
+          style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"inherit"}} />
+      </div>
       <div style={{marginBottom:12}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Livraison 🛵 (+{fmt(LIVRAISON_TARIF_DEFAULT)} FCFA)</label>
         <div style={{display:"flex",gap:8}}>
