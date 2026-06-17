@@ -317,7 +317,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         <button onClick={()=>setTicketPrint(ticket)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:14,color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>🖨️ Imprimer le ticket</button>        {ticket.tel&&<button onClick={()=>sendWhatsApp(ticket.tel, buildFacture(ticket, tarifs))} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:14,color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>💬 Envoyer la facture WhatsApp</button>}
-        <Btn label="Voir les commandes →" onClick={()=>onDone(ticket)} />
+       <Btn label="Voir les commandes →" onClick={()=>onDone&&onDone()} />
       </div>
     </div>
   );
@@ -2593,7 +2593,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} onBack={()=>setTab("home")} onDone={(cmdInfo)=>{if(cmdInfo)logAction("commande",`${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);setTab("commandes");}} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} employeActif={employeActif} onBack={()=>setTab("home")} onCreated={(cmdInfo)=>{if(cmdInfo)logAction("commande",`${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);}} onDone={()=>setTab("commandes")} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
