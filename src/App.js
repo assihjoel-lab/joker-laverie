@@ -2499,7 +2499,7 @@ function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClie
     {id:"commandes", icon:"📋",label:"Commandes"},
     {id:"livraisons",icon:"🛵",label:"Livreurs"},
     {id:"caisse",    icon:"💰",label:"Caisse"},
-    {id:"plus",      icon:"⚙️",label:"Plus"},
+    ...(employeActif?[]:[{id:"plus",icon:"⚙️",label:"Plus"}]),
   ];
 
   return (
@@ -3226,7 +3226,8 @@ export default function App(){
       ? <ChoixEmploye employes={employes||[]} onChoix={e=>setEmployeActifApp(e)} onGerant={()=>setShowLogin(true)} />
       : <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#060D1F"}}><p style={{color:"#4A7BF7"}}>Chargement...</p></div>
   );
-  if(!user) return <LoginScreen onBack={()=>setShowLogin(false)} />;
+
+  if(!user && !employeActifApp) return <LoginScreen onBack={()=>setShowLogin(false)} />;
 
   if(!allReady) return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:DARK}}>
