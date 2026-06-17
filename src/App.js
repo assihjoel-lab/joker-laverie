@@ -2330,7 +2330,9 @@ function ClientsDB({ commandes }) {
 function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,employes,upsertEmploye,removeEmploye,journal,upsertJournal,employeInitial,onLogout}){
   const [tab,setTab]=useState("home");
   const [employeActif, setEmployeActif] = useState(employeInitial||null);
-
+useEffect(()=>{
+    if(employeActif && tab==="plus") setTab("home");
+  },[employeActif, tab]);
   function logAction(type, detail) {
     if (!employeActif) return;
     upsertJournal({
