@@ -2401,7 +2401,6 @@ useEffect(()=>{
       ts: Date.now(),
     });
   }
-  }
   function mouvementStock(produitId, qte, type, note){
     const p = produits.find(x=>x.id===produitId); if(!p) return;
     const nouveauStock = type==="entree" ? (p.stock||0)+qte : Math.max(0,(p.stock||0)-qte);
