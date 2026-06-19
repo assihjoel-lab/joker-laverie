@@ -672,7 +672,6 @@ function TicketModal({ c, tarifs, onClose }){
   );
 }
 
-function imprimerTicket(){ /* remplacé par TicketModal */ }
 
 // ─── QR CODE (URL vers espace client avec N° ticket) ─────
 function QRCode({ value, size=120 }){
@@ -2545,21 +2544,6 @@ useEffect(()=>{
       const updated={...c,paiement:mode,paiementConfirme:true};
       upsertCmd(updated);
       logAction("paiement",`${c.client} · ${c.id} · ${fmt(c.total)} F · ${mode}`);
-
-      // ── Programme de parrainage : récompense à la 1ère commande payée ──
-      const cli = (clients||[]).find(cl=>(cl.codeClient&&cl.codeClient===updated.codeClient) || cl.nom?.toLowerCase()===updated.client?.toLowerCase());
-      if(cli && cli.referredBy && !cli.referralRewarded){
-        const parrain = (clients||[]).find(p=>p.codeClient===cli.referredBy);
-        if(upsertClient){
-          // +50 pts au parrainé
-          upsertClient({...cli, points:(cli.points||0)+50, referralRewarded:true, historique:[{date:todayStr(),pts:50,desc:"Parrainage : bienvenue !"},...(cli.historique||[])]});
-          // +50 pts au parrain
-          if(parrain){
-            upsertClient({...parrain, points:(parrain.points||0)+50, historique:[{date:todayStr(),pts:50,desc:`Parrainage : ${cli.nom} a commandé`},...(parrain.historique||[])]});
-            if(parrain.tel) sendWhatsApp(parrain.tel, `🃏 *JOKER Laverie & Service*%0A%0A🎉 Bonne nouvelle ! Votre ami(e) *${cli.nom}* vient de passer sa 1ère commande grâce à votre parrainage.%0A%0A🏅 *+50 points fidélité* viennent d'être ajoutés à votre compte !%0A%0AMerci de faire grandir la communauté JOKER 🙏`);
-          }
-        }
-      }
 
       return updated;
     }));
