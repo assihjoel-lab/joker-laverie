@@ -615,11 +615,39 @@ function TicketModal({ c, tarifs, onClose }){
         <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
         {c.poidsStatut==="estimated"&&<div style={{background:"#fff8e1",border:"1px solid #ffb800",borderRadius:4,padding:"4px 8px",fontSize:10,color:"#b45309",marginBottom:6}}>⚖️ Poids estimé — à confirmer</div>}
         {/* Lignes */}
-        {[["N° Ticket",c.id],["Date",c.date],["Client",c.client],c.tel?["Téléphone",c.tel]:null,c.codeClient?["Code client",c.codeClient]:null,["Service",tarif.label],["Poids",c.poids+" kg"],["Tarif",fmt(c.tarif||0)+" F/kg"],c.livraison?["Livraison 🛵","+"+fmt(frais)+" FCFA"]:null].filter(Boolean).map(([k,v])=>(
-          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
-            <span style={{color:"#666"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
-          </div>
-        ))}
+        {(()=>{
+          const lignes = c.panier && c.panier.length>0
+            ? c.panier
+            : [{tarifId:c.tarifId, label:tarif.label, qte:c.poids, type:c.tarifType||"kg", prix:c.tarif}];
+          const remisePct = c.remise||0;
+          const sousTotal = lignes.reduce((s,l)=>{
+            const t = tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0};
+            return s + Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+          },0);
+          const remiseMontant = remisePct>0 ? Math.round((sousTotal+frais)*remisePct/100) : 0;
+
+          const rows = [
+            ["N° Ticket", c.id],
+            ["Date", c.date],
+            ["Client", c.client],
+            c.tel?["Téléphone", c.tel]:null,
+            c.codeClient?["Code client", c.codeClient]:null,
+            ...lignes.map(l=>{
+              const t = tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};
+              const unite = l.type==="unite"?"u.":"kg";
+              const prixLigne = Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+              return [`${t.label} (${l.qte}${unite})`, fmt(prixLigne)+" F"];
+            }),
+            frais>0?["🛵 Livraison","+"+fmt(frais)+" F"]:null,
+            remisePct>0?["🎁 Remise ("+remisePct+"%)","-"+fmt(remiseMontant)+" F"]:null,
+          ].filter(Boolean);
+
+          return rows.map(([k,v])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
+              <span style={{color:"#666"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
+            </div>
+          ));
+        })()}
         <div style={{borderTop:"1px dashed #bbb",margin:"8px 0"}} />
         <div style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13}}>
           <span style={{color:"#666"}}>TOTAL</span><span style={{fontWeight:900,color:"#1A3EBD",fontSize:15}}>{fmt(c.total)} FCFA</span>
