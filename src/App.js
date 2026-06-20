@@ -41,6 +41,16 @@ const PAIEMENTS = [
   { id:"cash",   label:"Espèces", emoji:"💵", color:"#4A7BF7" },
 ];
 
+const SOURCES_CLIENT = [
+  { id:"bouche",   label:"Bouche à oreille",     emoji:"🗣️", color:"#4ADE80" },
+  { id:"passage",  label:"En passant devant",    emoji:"🚶", color:"#00C2FF" },
+  { id:"reseaux",  label:"Réseaux sociaux",      emoji:"📱", color:"#A855F7" },
+  { id:"whatsapp", label:"WhatsApp",             emoji:"💬", color:"#25D366" },
+  { id:"parrainage",label:"Parrainage",          emoji:"🎁", color:"#FFB800" },
+  { id:"flyer",    label:"Flyer / Affiche",      emoji:"📋", color:"#FF6B6B" },
+  { id:"autre",    label:"Autre",                emoji:"❓", color:"#8892B0" },
+];
+
 const REWARDS_INIT = [
   { id:1, label:"Lavage offert",   desc:"1 cycle gratuit",   pts:100, emoji:"🫧", color:CYAN },
   { id:2, label:"-50% séchage",    desc:"Prochain séchage",  pts:60,  emoji:"🌀", color:BLU2 },
@@ -159,6 +169,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   const [nom,setNom]=useState("");
   const [tel,setTel]=useState("");
   const [codeParrain,setCodeParrain]=useState("");
+  const [source,setSource]=useState("");
   const [parrainValide,setParrainValide]=useState(null);
   const [showSuggestions,setShowSuggestions]=useState(false);
   const [servicesOpen,setServicesOpen]=useState(false);
@@ -255,7 +266,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       if(existingCli) {
         upsertClient({...existingCli, codeClient, historique:[cmdEntry,...(existingCli.historique||[])], totalDepense:(existingCli.totalDepense||0)+c.total, commandes:[cmdEntry,...(existingCli.commandes||[])]});
       } else {
-        upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total, codeClient});
+        upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total, codeClient, source:source||""});
         // Récompense parrainage : +20 points au parrain
         if(parrainValide&&parrainValide.id){
           upsertClient({...parrainValide, points:(parrainValide.points||0)+20});
@@ -273,6 +284,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     }
    setPanier([]);
     setNoteCommande("");
+    setSource("");
     setTicket(c);
     if(onCreated) onCreated(c);
   }
@@ -400,6 +412,20 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
           <p style={{color:"#4ADE80",fontSize:12,marginTop:6}}>✅ Parrain : {parrainValide.nom} — 10% de réduction sera appliquée !</p>
         )}
       </div>
+      {/* Comment a-t-il connu JOKER (nouveau client uniquement) */}
+      {nom.trim().length>1&&!clientExist&&(
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>📍 Comment a-t-il connu JOKER ? (optionnel)</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {SOURCES_CLIENT.map(s=>(
+              <button key={s.id} onClick={()=>setSource(source===s.id?"":s.id)}
+                style={{background:source===s.id?`${s.color}22`:CARD,border:`1px solid ${source===s.id?s.color:BDR}`,borderRadius:12,padding:"9px 12px",color:source===s.id?s.color:"#8892B0",fontWeight:source===s.id?700:400,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                <span>{s.emoji}</span>{s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {/* ── Ajouter un service (dropdown) ── */}
       <div style={{marginBottom:12}}>
         <button onClick={()=>setServicesOpen(o=>!o)}
@@ -2247,28 +2273,34 @@ function HistoriqueFactures({ commandes, tarifs }) {
 
 
 // ─── BASE DE DONNÉES CLIENTS ──────────────────────────────
-function ClientsDB({ commandes }) {
+function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
+  const [showStats, setShowStats] = useState(false);
 
   const BLU="#1A3EBD", BLU2="#4A7BF7", CYAN="#00C2FF", CARD="#0D1F6E22", BDR="#1A3EBD44", DARK="#060D1F";
 
-  // Build client list from commandes
+  // Build client list : on part des vraies fiches clients (avec source, points…),
+  // et on complète avec les commandes pour les clients historiques pas encore en base.
   const clientMap = {};
+  (clientsDB||[]).forEach(cl => {
+    const key = cl.tel && cl.tel!=="—" ? cl.tel : cl.nom;
+    clientMap[key] = {
+      id: cl.id, nom: cl.nom, tel: cl.tel || "—",
+      source: cl.source || "",
+      commandes: [], totalDepense: cl.totalDepense||0, points: cl.points||0,
+    };
+  });
   commandes.forEach(c => {
     const key = c.tel || c.client;
     if (!clientMap[key]) {
-      clientMap[key] = {
-        nom: c.client,
-        tel: c.tel || "—",
-        commandes: [],
-        totalDepense: 0,
-        points: 0,
-      };
+      clientMap[key] = { nom: c.client, tel: c.tel || "—", source:"", commandes: [], totalDepense: 0, points: 0 };
     }
     clientMap[key].commandes.push(c);
-    if (c.paiementConfirme) clientMap[key].totalDepense += (c.total || 0);
-    clientMap[key].points = Math.max(clientMap[key].points, c.points || 0);
+    if (!clientsDB||!clientsDB.length) {
+      if (c.paiementConfirme) clientMap[key].totalDepense += (c.total || 0);
+      clientMap[key].points = Math.max(clientMap[key].points, c.points || 0);
+    }
   });
 
   const clients = Object.values(clientMap).sort((a,b) => b.totalDepense - a.totalDepense);
@@ -2277,6 +2309,14 @@ function ClientsDB({ commandes }) {
     c.tel.includes(search)
   );
 
+  // Stats sources
+  const sourceStats = SOURCES_CLIENT.map(s => ({
+    ...s,
+    count: clients.filter(c => c.source === s.id).length,
+  })).filter(s => s.count > 0).sort((a,b)=>b.count-a.count);
+  const sansSource = clients.filter(c => !c.source).length;
+  const totalAvecSource = clients.length - sansSource;
+
   function getLevel(pts) {
     if (pts >= 600) return { label:"Platinum", color:"#E0E0FF" };
     if (pts >= 300) return { label:"Gold",     color:"#FFD700" };
@@ -2284,8 +2324,18 @@ function ClientsDB({ commandes }) {
     return { label:"Bronze", color:"#CD7F32" };
   }
 
+  function setClientSource(sourceId){
+    if(!selected) return;
+    const newSource = selected.source===sourceId ? "" : sourceId;
+    setSelected({...selected, source:newSource});
+    if(upsertClient && selected.id){
+      upsertClient({...selected, id:selected.id, source:newSource});
+    }
+  }
+
   if (selected) {
     const lvl = getLevel(selected.points);
+    const srcInfo = SOURCES_CLIENT.find(s=>s.id===selected.source);
     return (
       <div style={{padding:"0 0 80px"}}>
         <div style={{padding:"16px 20px",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${BDR}`}}>
@@ -2310,6 +2360,28 @@ function ClientsDB({ commandes }) {
             </div>
           ))}
         </div>
+
+        {/* Source du client */}
+        {selected.id ? (
+          <div style={{padding:"0 20px",marginBottom:16}}>
+            <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>📍 Comment a-t-il connu JOKER ?</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {SOURCES_CLIENT.map(s=>(
+                <button key={s.id} onClick={()=>setClientSource(s.id)}
+                  style={{background:selected.source===s.id?`${s.color}22`:CARD,border:`1px solid ${selected.source===s.id?s.color:BDR}`,borderRadius:12,padding:"8px 12px",color:selected.source===s.id?s.color:"#8892B0",fontWeight:selected.source===s.id?700:400,fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                  <span>{s.emoji}</span>{s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : srcInfo ? (
+          <div style={{padding:"0 20px",marginBottom:16}}>
+            <div style={{background:CARD,borderRadius:12,padding:"10px 14px",border:`1px solid ${srcInfo.color}40`,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16}}>{srcInfo.emoji}</span>
+              <span style={{fontSize:13,color:srcInfo.color,fontWeight:700}}>{srcInfo.label}</span>
+            </div>
+          </div>
+        ) : null}
 
         <div style={{padding:"0 20px"}}>
           <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,letterSpacing:2,marginBottom:10,color:"#F8FAFF"}}>Historique des commandes</p>
@@ -2337,7 +2409,34 @@ function ClientsDB({ commandes }) {
 
   return (
     <div style={{padding:"20px 20px 80px",animation:"fadeIn 0.4s ease"}}>
-      <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Clients ({clients.length})</h2>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Clients ({clients.length})</h2>
+        <button onClick={()=>setShowStats(s=>!s)} style={{background:showStats?`${BLU}40`:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"8px 14px",color:BLU2,fontWeight:700,fontSize:12,cursor:"pointer"}}>📊 Sources</button>
+      </div>
+
+      {showStats && (
+        <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:16,border:`1px solid ${BDR}`,animation:"fadeIn 0.25s ease"}}>
+          <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:12}}>D'où viennent vos clients</p>
+          {sourceStats.length===0 && <p style={{color:"#8892B0",fontSize:13,textAlign:"center",padding:"10px 0"}}>Aucune source renseignée pour l'instant.</p>}
+          {sourceStats.map(s=>{
+            const pct = clients.length ? Math.round((s.count/clients.length)*100) : 0;
+            return (
+              <div key={s.id} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:13,color:"#F8FAFF"}}>{s.emoji} {s.label}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:s.color}}>{s.count} ({pct}%)</span>
+                </div>
+                <div style={{height:6,background:"#1A2240",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:pct+"%",background:s.color,borderRadius:99,transition:"width 0.6s ease"}} />
+                </div>
+              </div>
+            );
+          })}
+          {sansSource>0&&(
+            <p style={{fontSize:11,color:"#8892B0",marginTop:8}}>ℹ️ {sansSource} client(s) sans source renseignée — ouvrez leur fiche pour la compléter.</p>
+          )}
+        </div>
+      )}
 
       <div style={{position:"relative",marginBottom:16}}>
         <input
@@ -2356,7 +2455,7 @@ function ClientsDB({ commandes }) {
 
       {filtered.map(c=>{
         const lvl = getLevel(c.points);
-        const derniere = c.commandes[c.commandes.length-1];
+        const srcInfo = SOURCES_CLIENT.find(s=>s.id===c.source);
         return (
           <button key={c.tel+c.nom} onClick={()=>setSelected(c)} style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:16,padding:"14px 16px",marginBottom:10,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:14}}>
             <div style={{width:44,height:44,borderRadius:12,background:`${BLU}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>👤</div>
@@ -2366,8 +2465,9 @@ function ClientsDB({ commandes }) {
                 <span style={{fontSize:10,color:lvl.color,fontWeight:700,background:lvl.color+"22",borderRadius:99,padding:"2px 8px"}}>{lvl.label}</span>
               </div>
               <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>{c.tel}</p>
-              <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
                 <span style={{fontSize:12,color:CYAN}}>{c.commandes.length} commande{c.commandes.length>1?"s":""}</span>
+                {srcInfo && <span style={{fontSize:11,color:srcInfo.color}}>{srcInfo.emoji} {srcInfo.label}</span>}
                 <span style={{fontSize:12,color:"#FFD700"}}>{c.totalDepense.toLocaleString("fr-FR")} F</span>
               </div>
             </div>
@@ -2863,7 +2963,7 @@ useEffect(()=>{
         </div>
       )}
       {tab==="clients"&&(
-        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} /></div>
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} clients={clients} upsertClient={upsertClient} /></div>
       )}
       {tab==="promos"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionPromos promos={promos} setPromos={setPromos} /></div>
