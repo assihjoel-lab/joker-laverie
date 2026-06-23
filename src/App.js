@@ -2210,45 +2210,98 @@ function HistoriqueFactures({ commandes, tarifs }) {
             {selected===c.id&&sel&&(
               <div style={{background:"#0A1628",borderRadius:"0 0 18px 18px",padding:16,border:`1px solid ${BLU2}`,borderTop:"none",animation:"fadeIn 0.25s ease"}}>
                 {/* Aperçu facture */}
-                <div style={{background:DARK,borderRadius:14,padding:16,marginBottom:14,border:`1px solid ${BDR}`,fontFamily:"monospace"}}>
-                  <p style={{textAlign:"center",fontWeight:900,fontSize:16,marginBottom:2}}>JOKER LAVERIE & SERVICE</p>
-                  <p style={{textAlign:"center",color:"#8892B0",fontSize:11,marginBottom:12}}>Lomé, Togo</p>
-                  {[
-                    ["N° Ticket",sel.id],
-                    ["Date",     sel.date],
-                    ["Client",   sel.client],
-                    ["Téléphone",sel.tel||"—"],
-                  ].map(([k,v])=>(
-                    <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-                      <span style={{color:"#8892B0",fontSize:12}}>{k}</span>
-                      <span style={{fontWeight:700,fontSize:12}}>{v}</span>
+                {(()=>{
+                  const lignes = sel.panier&&sel.panier.length>0
+                    ? sel.panier
+                    : [{tarifId:sel.tarifId,label:(tarifs.find(t=>t.id===sel.tarifId)||{label:"Service"}).label,qte:sel.poids,type:sel.tarifType||"kg",prix:sel.tarif}];
+                  const frais = sel.livraison?(sel.fraisLiv||LIVRAISON_TARIF_DEFAULT):0;
+                  const remisePct = sel.remise||0;
+                  const sousTotal = lignes.reduce((s,l)=>{
+                    const t=tarifs.find(t=>t.id===l.tarifId)||{prix:l.prix||0};
+                    return s+Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+                  },0);
+                  const remiseMontant = remisePct>0?Math.round((sousTotal+frais)*remisePct/100):0;
+                  const pmt = PAIEMENTS.find(p=>p.id===sel.paiement)||{label:sel.paiement||"—"};
+                  return (
+                    <div style={{background:DARK,borderRadius:14,padding:16,marginBottom:14,border:`1px solid ${BDR}`,fontFamily:"monospace"}}>
+                      <p style={{textAlign:"center",fontWeight:900,fontSize:16,marginBottom:2}}>JOKER LAVERIE & SERVICE</p>
+                      <p style={{textAlign:"center",color:"#8892B0",fontSize:11,marginBottom:12}}>Agoe Cacaveli, Lomé, Togo</p>
+
+                      {/* Infos client */}
+                      {[["N° Ticket",sel.id],["Date",sel.date],["Client",sel.client],sel.tel?["Téléphone",sel.tel]:null,sel.codeClient?["Code",sel.codeClient]:null]
+                        .filter(Boolean).map(([k,v])=>(
+                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                          <span style={{color:"#8892B0",fontSize:12}}>{k}</span>
+                          <span style={{fontWeight:700,fontSize:12}}>{v}</span>
+                        </div>
+                      ))}
+
+                      <div style={{height:1,background:"rgba(255,255,255,0.15)",margin:"10px 0"}} />
+                      <p style={{color:BLU2,fontSize:10,letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Détail des services</p>
+
+                      {/* Ligne par service */}
+                      {lignes.map((l,i)=>{
+                        const t=tarifs.find(t=>t.id===l.tarifId)||{label:l.label||"Service",prix:l.prix||0};
+                        const unite=l.type==="unite"?"u.":"kg";
+                        const prixLigne=Math.round(parseFloat(l.qte||0)*(t.prix||l.prix||0));
+                        return (
+                          <div key={i} style={{padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                            <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                              <span style={{fontSize:12,color:"#F8FAFF",fontWeight:700}}>{t.label}</span>
+                              <span style={{fontSize:12,color:CYAN,fontWeight:700}}>{fmt(prixLigne)} F</span>
+                            </div>
+                            <span style={{fontSize:10,color:"#8892B0"}}>{l.qte} {unite} × {fmt(t.prix||l.prix||0)} F/{unite}</span>
+                            {l.note&&<p style={{fontSize:10,color:"#FFB800",marginTop:2}}>📝 {l.note}</p>}
+                          </div>
+                        );
+                      })}
+
+                      {/* Livraison */}
+                      {frais>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                          <span style={{color:"#A855F7",fontSize:12}}>🛵 Livraison</span>
+                          <span style={{fontSize:12,color:"#A855F7"}}>+{fmt(frais)} F</span>
+                        </div>
+                      )}
+
+                      {/* Sous-total si plusieurs lignes ou livraison */}
+                      {(lignes.length>1||frais>0)&&(
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                          <span style={{color:"#8892B0",fontSize:12}}>Sous-total</span>
+                          <span style={{fontSize:12}}>{fmt(sousTotal+frais)} F</span>
+                        </div>
+                      )}
+
+                      {/* Réduction */}
+                      {remisePct>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                          <span style={{color:"#4ADE80",fontSize:12}}>🎁 Réduction ({remisePct}%)</span>
+                          <span style={{fontSize:12,color:"#4ADE80",fontWeight:700}}>-{fmt(remiseMontant)} F</span>
+                        </div>
+                      )}
+
+                      {/* Total */}
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}>
+                        <span style={{fontWeight:900,fontSize:15}}>TOTAL</span>
+                        <span style={{fontWeight:900,fontSize:18,color:CYAN}}>{fmt(sel.total)} FCFA</span>
+                      </div>
+
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.1)"}}>
+                        <span style={{color:"#8892B0",fontSize:12}}>Paiement</span>
+                        <span style={{fontSize:12,fontWeight:700}}>{pmt.label}</span>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0"}}>
+                        <span style={{color:"#8892B0",fontSize:12}}>Statut</span>
+                        <span style={{fontSize:12,fontWeight:700,color:sel.paiementConfirme?CYAN:"#FFB800"}}>{sel.paiementConfirme?"✅ Payé":"⏳ En attente"}</span>
+                      </div>
+
+                      <div style={{textAlign:"center",marginTop:12,paddingTop:10,borderTop:"1px dashed rgba(255,255,255,0.1)"}}>
+                        <p style={{color:BLU2,fontSize:12,fontWeight:700}}>Merci de votre confiance ! 🙏</p>
+                        <p style={{color:"#8892B050",fontSize:10,marginTop:4}}>🏅 +{sel.points||0} points fidélité</p>
+                      </div>
                     </div>
-                  ))}
-                  <div style={{height:1,background:"rgba(255,255,255,0.1)",margin:"10px 0"}} />
-                  {[
-                    ["Service",   (tarifs.find(t=>t.id===sel.tarifId)||{label:"—"}).label],
-                    ["Poids",     sel.poids+"kg"],
-                    ["Sous-total",fmt(sel.total-(sel.livraison?LIVRAISON_TARIF_DEFAULT:0))+" FCFA"],
-                    sel.livraison?["Livraison 🛵","+"+fmt(LIVRAISON_TARIF_DEFAULT)+" FCFA"]:null,
-                  ].filter(Boolean).map(([k,v])=>(
-                    <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-                      <span style={{color:"#8892B0",fontSize:12}}>{k}</span>
-                      <span style={{fontSize:12}}>{v}</span>
-                    </div>
-                  ))}
-                  <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",marginTop:4}}>
-                    <span style={{fontWeight:900,fontSize:15}}>TOTAL</span>
-                    <span style={{fontWeight:900,fontSize:18,color:CYAN}}>{fmt(sel.total)} FCFA</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderTop:"1px solid rgba(255,255,255,0.1)"}}>
-                    <span style={{color:"#8892B0",fontSize:12}}>Paiement</span>
-                    <span style={{fontSize:12,fontWeight:700}}>{(PAIEMENTS.find(p=>p.id===sel.paiement)||{label:sel.paiement||"—"}).label}</span>
-                  </div>
-                  <div style={{textAlign:"center",marginTop:12,paddingTop:10,borderTop:"1px dashed rgba(255,255,255,0.1)"}}>
-                    <p style={{color:BLU2,fontSize:12,fontWeight:700}}>Merci de votre confiance ! 🙏</p>
-                    <p style={{color:"#8892B050",fontSize:10,marginTop:4}}>🏅 +{sel.points} points fidélité</p>
-                  </div>
-                </div>
+                  );
+                })()}
 
                 {/* Actions */}
                 <div style={{display:"flex",flexDirection:"column",gap:10}}>
