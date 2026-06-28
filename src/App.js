@@ -250,7 +250,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const c={id:genId(),client:nom,tel,codeClient,
       employeId:employeActif?.id||null, employeNom:employeActif?.nom||null,
       note:noteCommande||"",
-      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""})),
+      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?(parseFloat(s.poids)||0):(parseInt(s.qte)||1),note:s.note||""})),
       poids:poidsTotal, qte:1,
       poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
       tarifId:firstTarif.id,tarif:firstTarif.prix,tarifType:firstTarif.type||"kg",
@@ -322,8 +322,8 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
             ["+Points", "+"+pts+" 🏅"],
           ].filter(Boolean);
           return rows;
-        })().map(([k,v])=>(
-          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        })().map(([k,v],idx)=>(
+          <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
           </div>
@@ -668,8 +668,8 @@ function TicketModal({ c, tarifs, onClose }){
             remisePct>0?["🎁 Remise ("+remisePct+"%)","-"+fmt(remiseMontant)+" F"]:null,
           ].filter(Boolean);
 
-          return rows.map(([k,v])=>(
-            <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
+          return rows.map(([k,v],idx)=>(
+            <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
               <span style={{color:"#666"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
             </div>
           ));
@@ -2229,8 +2229,8 @@ function HistoriqueFactures({ commandes, tarifs }) {
 
                       {/* Infos client */}
                       {[["N° Ticket",sel.id],["Date",sel.date],["Client",sel.client],sel.tel?["Téléphone",sel.tel]:null,sel.codeClient?["Code",sel.codeClient]:null]
-                        .filter(Boolean).map(([k,v])=>(
-                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                        .filter(Boolean).map(([k,v],idx)=>(
+                        <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
                           <span style={{color:"#8892B0",fontSize:12}}>{k}</span>
                           <span style={{fontWeight:700,fontSize:12}}>{v}</span>
                         </div>
