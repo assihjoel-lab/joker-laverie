@@ -1687,6 +1687,7 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
           VUE JOURNALIÈRE (existante)
       ══════════════════════════════════════════ */}
       {!vueMensuelle&&(
+      <>
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[{id:"today",l:"Auj."},{id:"week",l:"7 jours"},{id:"month",l:"30 jours"},{id:"all",l:"Total"}].map(p=>(
           <button key={p.id} onClick={()=>setPeriod(p.id)} style={{flex:1,background:period===p.id?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${period===p.id?BLU2:BDR}`,borderRadius:12,padding:"10px",color:period===p.id?"#fff":"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>{p.l}</button>
@@ -1939,7 +1940,8 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
           </div>
         );
       })}
-      </div>)} {/* fin !vueMensuelle */}
+      </div>
+      </>)} {/* fin !vueMensuelle */}
     </div>
   );
 }
