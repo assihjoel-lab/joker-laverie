@@ -250,7 +250,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const c={id:genId(),client:nom,tel,codeClient,
       employeId:employeActif?.id||null, employeNom:employeActif?.nom||null,
       note:noteCommande||"",
-      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?(parseFloat(s.poids)||0):(parseInt(s.qte)||1),note:s.note||""})),
+      panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""})),
       poids:poidsTotal, qte:1,
       poidsStatut:panier.some(s=>s.isKg&&isDepot)?"estimated":"confirmed",
       tarifId:firstTarif.id,tarif:firstTarif.prix,tarifType:firstTarif.type||"kg",
@@ -322,8 +322,8 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
             ["+Points", "+"+pts+" 🏅"],
           ].filter(Boolean);
           return rows;
-        })().map(([k,v],idx)=>(
-          <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+        })().map(([k,v])=>(
+          <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <span style={{color:"#8892B0",fontSize:13}}>{k}</span>
             <span style={{fontWeight:700,fontSize:13,color:k==="TOTAL"?CYAN:k==="+Points"?BLU2:"#F8FAFF"}}>{v}</span>
           </div>
@@ -668,8 +668,8 @@ function TicketModal({ c, tarifs, onClose }){
             remisePct>0?["🎁 Remise ("+remisePct+"%)","-"+fmt(remiseMontant)+" F"]:null,
           ].filter(Boolean);
 
-          return rows.map(([k,v],idx)=>(
-            <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
+          return rows.map(([k,v])=>(
+            <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"3px 0",borderBottom:"1px solid #f0f0f0",fontSize:11}}>
               <span style={{color:"#666"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
             </div>
           ));
@@ -1259,7 +1259,7 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
 }
 
 // ─── CAISSE ───────────────────────────────────────────────
-function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour,clotures=[],upsertCloture }){
+function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour,clotures=[],upsertCloture,cloturesMensuelles=[],upsertClotureMensuelle }){
   const [period,setPeriod]=useState("today");
   const [showDepenses,setShowDepenses]=useState(false);
   const [showObjectif,setShowObjectif]=useState(false);
@@ -1270,10 +1270,17 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const [showCloture,setShowCloture]=useState(false);
   const [nvCompte,setNvCompte]=useState("");
   const [nvNoteCloture,setNvNoteCloture]=useState("");
+  // Clôture mensuelle
+  const [vueMensuelle,setVueMensuelle]=useState(false);
+  const [showClotureMois,setShowClotureMois]=useState(false);
+  const [nvCompteMois,setNvCompteMois]=useState("");
+  const [nvNoteClotMois,setNvNoteClotMois]=useState("");
+  const [moisSelectionne,setMoisSelectionne]=useState(null); // "2025-06" etc.
   const today=todayStr();
   const todayISO=new Date().toISOString().slice(0,10);
   const CATS_DEP=["Fournitures","Eau/Électricité","Salaire","Loyer","Transport","Autre"];
 
+  // ── Helpers dates ──
   function getWeekDates(){
     const days=[]; const now=new Date();
     for(let i=6;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));}
@@ -1284,10 +1291,46 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
     for(let i=29;i>=0;i--){const d=new Date(now);d.setDate(now.getDate()-i);days.push(d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));}
     return days;
   }
+  // Retourne toutes les dates (format "fr-FR") qui appartiennent à un mois ISO "YYYY-MM"
+  function getDatesForMonth(moisISO){
+    const [year,month]=moisISO.split("-").map(Number);
+    const daysInMonth=new Date(year,month,0).getDate();
+    const days=[];
+    for(let d=1;d<=daysInMonth;d++){
+      const dt=new Date(year,month-1,d);
+      days.push(dt.toLocaleDateString("fr-FR",{day:"numeric",month:"short"}));
+    }
+    return days;
+  }
+  // Liste de tous les mois présents dans les commandes (format "YYYY-MM")
+  function getMoisDisponibles(){
+    const moisSet=new Set();
+    commandes.forEach(c=>{
+      if(c.createdAt){
+        const d=new Date(c.createdAt);
+        moisSet.add(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+      }
+    });
+    // Ajouter le mois courant toujours
+    const now=new Date();
+    moisSet.add(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`);
+    return [...moisSet].sort().reverse();
+  }
+  function labelMois(moisISO){
+    const [year,month]=moisISO.split("-").map(Number);
+    const d=new Date(year,month-1,1);
+    return d.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  }
+  // Mois courant ISO
+  const now=new Date();
+  const moisCourantISO=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const moisActif=moisSelectionne||moisCourantISO;
 
   const weekDates=getWeekDates();
   const monthDates=getMonthDates();
+  const moisDisponibles=getMoisDisponibles();
 
+  // ── Filtre commandes selon onglet ──
   const filtered=period==="today"
     ? commandes.filter(c=>c.date===today)
     : period==="week"
@@ -1303,11 +1346,21 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const byPmt=PAIEMENTS.map(p=>({...p,total:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).reduce((s,c)=>s+c.total,0),count:filtered.filter(c=>c.paiement===p.id&&c.paiementConfirme).length}));
   const maxPmt=Math.max(...byPmt.map(p=>p.total),1);
 
-  // Clôture de caisse du jour
+  // ── Clôture jour ──
   const caAujourdHui=commandes.filter(c=>c.date===today&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
   const clotureAuj=clotures.find(c=>c.dateISO===todayISO);
   const ecartAuj=clotureAuj?clotureAuj.montantCompte-clotureAuj.encaisse:null;
   const clotHistorique=[...clotures].sort((a,b)=>(b.dateISO||"").localeCompare(a.dateISO||""));
+
+  // ── Données mois actif ──
+  const datesDuMois=getDatesForMonth(moisActif);
+  const cmdsMois=commandes.filter(c=>datesDuMois.includes(c.date));
+  const caMoisTotal=cmdsMois.reduce((s,c)=>s+c.total,0);
+  const caMoisEncaisse=cmdsMois.filter(c=>c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+  const caMoisAttente=caMoisTotal-caMoisEncaisse;
+  const depMois=depenses.filter(d=>datesDuMois.includes(d.date)).reduce((s,d)=>s+(d.montant||0),0);
+  const benefMois=caMoisEncaisse-depMois;
+  const clotMoisExist=(cloturesMensuelles||[]).find(c=>c.moisISO===moisActif);
 
   // Grouper par date pour l'historique
   const byDate={};
@@ -1371,10 +1424,269 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Caisse & Recettes</h2>
         <div style={{display:"flex",gap:6}}>
+          <button onClick={()=>setVueMensuelle(v=>!v)} style={{background:vueMensuelle?`linear-gradient(135deg,${BLU},${BLU2})`:"#1A0D3D",border:`1px solid ${vueMensuelle?BLU2:"#A855F740"}`,borderRadius:10,padding:"7px 10px",color:vueMensuelle?"#fff":"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📅 Mois</button>
           <button onClick={exportCSV} title="Exporter Excel" style={{background:"#0D3B1A",border:"1px solid #4ADE8040",borderRadius:10,padding:"7px 10px",color:"#4ADE80",fontWeight:700,fontSize:12,cursor:"pointer"}}>📊 Excel</button>
           <button onClick={exportHTML} title="Exporter PDF" style={{background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:10,padding:"7px 10px",color:"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📄 PDF</button>
         </div>
       </div>
+
+      {/* ══════════════════════════════════════════
+          VUE MENSUELLE
+      ══════════════════════════════════════════ */}
+      {vueMensuelle&&(
+        <div style={{animation:"fadeIn 0.3s ease"}}>
+
+          {/* Sélecteur de mois */}
+          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:6,marginBottom:14}}>
+            {moisDisponibles.map(m=>(
+              <button key={m} onClick={()=>setMoisSelectionne(m)}
+                style={{flexShrink:0,background:moisActif===m?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${moisActif===m?BLU2:BDR}`,borderRadius:20,padding:"8px 16px",color:moisActif===m?"#fff":"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>
+                {labelMois(m)}{m===moisCourantISO?" (en cours)":""}
+              </button>
+            ))}
+          </div>
+
+          {/* Résumé du mois */}
+          <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:22,padding:20,marginBottom:14,border:"1px solid rgba(0,194,255,0.3)"}}>
+            <p style={{fontSize:11,color:"#8892B0",letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>
+              {labelMois(moisActif).toUpperCase()}
+            </p>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:42,color:CYAN,letterSpacing:2,lineHeight:1}}>{fmt(caMoisEncaisse)} FCFA</p>
+            <p style={{color:"#8892B0",fontSize:12,marginTop:4}}>encaissé sur {cmdsMois.length} commande(s)</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:14}}>
+              {[
+                {l:"Théorique",v:fmt(caMoisTotal)+" F",c:"#8892B0"},
+                {l:"En attente",v:fmt(caMoisAttente)+" F",c:"#FFB800"},
+                {l:"Dépenses",v:"-"+fmt(depMois)+" F",c:"#FF6B6B"},
+              ].map(s=>(
+                <div key={s.l} style={{background:"rgba(0,0,0,0.3)",borderRadius:12,padding:"10px 8px",textAlign:"center"}}>
+                  <p style={{fontWeight:700,fontSize:14,color:s.c}}>{s.v}</p>
+                  <p style={{fontSize:10,color:"#8892B0",marginTop:3}}>{s.l}</p>
+                </div>
+              ))}
+            </div>
+            {/* Bénéfice net mensuel */}
+            <div style={{marginTop:14,paddingTop:12,borderTop:"1px solid rgba(255,255,255,0.1)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{color:"#8892B0",fontSize:13}}>Bénéfice net du mois</span>
+              <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,color:benefMois>=0?"#4ADE80":"#FF6B6B"}}>{benefMois>=0?"+":""}{fmt(benefMois)} F</span>
+            </div>
+          </div>
+
+          {/* Par mode de paiement (mois) */}
+          <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+            <p style={{fontWeight:700,fontSize:13,marginBottom:10}}>💳 Par mode de paiement</p>
+            {PAIEMENTS.map(p=>{
+              const total=cmdsMois.filter(c=>c.paiement===p.id&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+              const count=cmdsMois.filter(c=>c.paiement===p.id&&c.paiementConfirme).length;
+              const pct=caMoisEncaisse>0?Math.round((total/caMoisEncaisse)*100):0;
+              return (
+                <div key={p.id} style={{marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontSize:13}}>{p.emoji} {p.label} <span style={{color:"#8892B0",fontSize:11}}>({count})</span></span>
+                    <span style={{fontWeight:700,color:total>0?CYAN:"#8892B0",fontSize:13}}>{fmt(total)} F</span>
+                  </div>
+                  <div style={{height:5,background:"#1A2240",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:pct+"%",background:p.color,borderRadius:99,transition:"width 0.6s ease"}} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Dépenses du mois par catégorie */}
+          {(()=>{
+            const deps=depenses.filter(d=>datesDuMois.includes(d.date));
+            const parCat={};
+            deps.forEach(d=>{ parCat[d.categorie]=(parCat[d.categorie]||0)+d.montant; });
+            if(deps.length===0) return null;
+            return (
+              <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+                <p style={{fontWeight:700,fontSize:13,marginBottom:10}}>💸 Dépenses du mois par catégorie</p>
+                {Object.entries(parCat).sort((a,b)=>b[1]-a[1]).map(([cat,total])=>(
+                  <div key={cat} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:`1px solid ${BDR}`}}>
+                    <span style={{fontSize:13,color:"#8892B0"}}>{cat}</span>
+                    <span style={{fontWeight:700,color:"#FF6B6B",fontSize:13}}>-{fmt(total)} F</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:10}}>
+                  <span style={{fontWeight:700,fontSize:13}}>Total dépenses</span>
+                  <span style={{fontWeight:700,color:"#FF6B6B",fontSize:14}}>-{fmt(depMois)} F</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── CLÔTURE MENSUELLE ── */}
+          <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:`1px solid ${clotMoisExist?"#4ADE8030":BDR}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div>
+                <p style={{fontWeight:700,fontSize:14}}>🔒 Clôture du mois</p>
+                <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{labelMois(moisActif)}</p>
+              </div>
+              {clotMoisExist&&!showClotureMois&&(
+                <button onClick={()=>{setNvCompteMois(String(clotMoisExist.montantCompte));setNvNoteClotMois(clotMoisExist.note||"");setShowClotureMois(true);}}
+                  style={{background:"none",border:`1px solid ${BDR}`,borderRadius:10,padding:"6px 10px",color:"#8892B0",fontSize:11,cursor:"pointer"}}>✏️ Corriger</button>
+              )}
+            </div>
+
+            {/* Résumé rapide */}
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+              <span style={{fontSize:12,color:"#8892B0"}}>CA encaissé (app)</span>
+              <span style={{fontWeight:700,color:CYAN,fontSize:14}}>{fmt(caMoisEncaisse)} F</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
+              <span style={{fontSize:12,color:"#8892B0"}}>Dépenses du mois</span>
+              <span style={{fontWeight:700,color:"#FF6B6B",fontSize:14}}>-{fmt(depMois)} F</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:14,paddingTop:8,borderTop:`1px solid ${BDR}`}}>
+              <span style={{fontSize:13,color:"#8892B0"}}>Bénéfice théorique</span>
+              <span style={{fontWeight:700,color:benefMois>=0?"#4ADE80":"#FF6B6B",fontSize:15}}>{benefMois>=0?"+":""}{fmt(benefMois)} F</span>
+            </div>
+
+            {clotMoisExist&&!showClotureMois ? (
+              <>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                  <span style={{fontSize:12,color:"#8892B0"}}>Montant physique compté</span>
+                  <span style={{fontWeight:700,fontSize:14}}>{fmt(clotMoisExist.montantCompte)} F</span>
+                </div>
+                {(()=>{
+                  const ecart=clotMoisExist.montantCompte-clotMoisExist.encaisse;
+                  return (
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid ${BDR}`}}>
+                      <span style={{fontSize:12,color:"#8892B0"}}>Écart</span>
+                      <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:ecart===0?"#4ADE80":"#FF6B6B"}}>{ecart>0?"+":""}{fmt(ecart)} F</span>
+                    </div>
+                  );
+                })()}
+                {clotMoisExist.note&&<p style={{fontSize:11,color:"#8892B0",marginTop:8,fontStyle:"italic"}}>📝 {clotMoisExist.note}</p>}
+                <div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 14px",marginTop:12,border:`1px solid ${CYAN}30`}}>
+                  <p style={{color:CYAN,fontWeight:700,fontSize:13}}>✅ Mois clôturé le {clotMoisExist.dateCloture}</p>
+                </div>
+              </>
+            ) : (
+              <div style={{animation:"fadeIn 0.2s ease"}}>
+                {!clotMoisExist&&<p style={{color:"#FFB800",fontSize:12,marginBottom:10}}>⚠️ Ce mois n'a pas encore été clôturé. Entrez le montant physiquement compté pour finaliser.</p>}
+                <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Montant physiquement compté (FCFA)</label>
+                <input value={nvCompteMois} onChange={e=>setNvCompteMois(e.target.value)} placeholder="Ex: 185000" type="number"
+                  style={{width:"100%",background:DARK,border:`1px solid ${BLU2}`,borderRadius:12,padding:"14px",color:CYAN,fontSize:22,fontWeight:700,outline:"none",textAlign:"center",marginBottom:10}} />
+                <input value={nvNoteClotMois} onChange={e=>setNvNoteClotMois(e.target.value)} placeholder="Note (optionnel : explication d'un écart...)"
+                  style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none",marginBottom:12}} />
+                {nvCompteMois&&(()=>{
+                  const compte=parseInt(nvCompteMois)||0;
+                  const ecart=compte-caMoisEncaisse;
+                  return (
+                    <div style={{background:"#0A0F1E",borderRadius:12,padding:"10px 14px",marginBottom:12,border:`1px solid ${ecart===0?"#4ADE8040":ecart>0?"#FFB80040":"#FF444440"}`}}>
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:12,color:"#8892B0"}}>Écart anticipé</span>
+                        <span style={{fontWeight:700,color:ecart===0?"#4ADE80":ecart>0?"#FFB800":"#FF6B6B",fontSize:16}}>{ecart>0?"+":""}{fmt(ecart)} F</span>
+                      </div>
+                      {ecart!==0&&<p style={{fontSize:11,color:"#8892B0",marginTop:4}}>{ecart>0?"Plus d'argent compté que prévu.":"Il manque de l'argent."}</p>}
+                    </div>
+                  );
+                })()}
+                <div style={{display:"flex",gap:8}}>
+                  {clotMoisExist&&<button onClick={()=>setShowClotureMois(false)} style={{flex:1,background:"none",border:`1px solid ${BDR}`,borderRadius:12,padding:"12px",color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Annuler</button>}
+                  <button onClick={()=>{
+                    if(!nvCompteMois||!upsertClotureMensuelle) return;
+                    const dateAujourdHui=new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
+                    upsertClotureMensuelle({
+                      id:"clotmois_"+moisActif,
+                      moisISO:moisActif,
+                      labelMois:labelMois(moisActif),
+                      encaisse:caMoisEncaisse,
+                      depenses:depMois,
+                      beneficeNet:benefMois,
+                      montantCompte:parseInt(nvCompteMois)||0,
+                      nbCommandes:cmdsMois.length,
+                      note:nvNoteClotMois.trim(),
+                      dateCloture:dateAujourdHui,
+                      ts:Date.now(),
+                    });
+                    setShowClotureMois(false);setNvCompteMois("");setNvNoteClotMois("");
+                  }} disabled={!nvCompteMois}
+                    style={{flex:2,background:nvCompteMois?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"12px",color:nvCompteMois?"#fff":"#8892B0",fontWeight:700,fontSize:14,cursor:nvCompteMois?"pointer":"not-allowed"}}>
+                    🔒 {clotMoisExist?"Mettre à jour":"Clôturer le mois"}
+                  </button>
+                </div>
+              </div>
+            )}
+            {!clotMoisExist&&!showClotureMois&&(
+              <button onClick={()=>setShowClotureMois(true)} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"14px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginTop:4}}>
+                🔒 Clôturer {labelMois(moisActif)}
+              </button>
+            )}
+          </div>
+
+          {/* ── HISTORIQUE CLÔTURES MENSUELLES ── */}
+          {(cloturesMensuelles||[]).length>0&&(
+            <div style={{marginBottom:14}}>
+              <p style={{fontSize:11,color:"#8892B0",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>Historique des mois clôturés</p>
+              {[...(cloturesMensuelles||[])].sort((a,b)=>(b.moisISO||"").localeCompare(a.moisISO||"")).map(cm=>{
+                const ecart=cm.montantCompte-cm.encaisse;
+                return (
+                  <div key={cm.id} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${BDR}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                      <div>
+                        <p style={{fontWeight:700,fontSize:14}}>{cm.labelMois}</p>
+                        <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>Clôturé le {cm.dateCloture} · {cm.nbCommandes} cmd(s)</p>
+                      </div>
+                      <div style={{textAlign:"right"}}>
+                        <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:CYAN}}>{fmt(cm.encaisse)} F</p>
+                        <p style={{fontSize:10,color:"#8892B0"}}>encaissé</p>
+                      </div>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+                      <div style={{background:DARK,borderRadius:10,padding:"8px",textAlign:"center"}}>
+                        <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>-{fmt(cm.depenses||0)} F</p>
+                        <p style={{fontSize:9,color:"#8892B0",marginTop:2}}>Dépenses</p>
+                      </div>
+                      <div style={{background:DARK,borderRadius:10,padding:"8px",textAlign:"center"}}>
+                        <p style={{color:cm.beneficeNet>=0?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:13}}>{cm.beneficeNet>=0?"+":""}{fmt(cm.beneficeNet||0)} F</p>
+                        <p style={{fontSize:9,color:"#8892B0",marginTop:2}}>Bénéfice</p>
+                      </div>
+                      <div style={{background:DARK,borderRadius:10,padding:"8px",textAlign:"center"}}>
+                        <p style={{color:ecart===0?"#4ADE80":ecart>0?"#FFB800":"#FF6B6B",fontWeight:700,fontSize:13}}>{ecart>0?"+":""}{fmt(ecart)} F</p>
+                        <p style={{fontSize:9,color:"#8892B0",marginTop:2}}>Écart</p>
+                      </div>
+                    </div>
+                    {cm.note&&<p style={{fontSize:11,color:"#8892B0",marginTop:8,fontStyle:"italic"}}>📝 {cm.note}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Recettes jour par jour du mois sélectionné */}
+          <p style={{fontSize:11,color:"#8892B0",letterSpacing:2,textTransform:"uppercase",marginBottom:10}}>Détail jour par jour</p>
+          {(()=>{
+            const byDateMois={};
+            cmdsMois.forEach(c=>{if(!byDateMois[c.date])byDateMois[c.date]=[];byDateMois[c.date].push(c);});
+            const datesMois=Object.keys(byDateMois).sort((a,b)=>b.localeCompare(a));
+            if(datesMois.length===0) return <p style={{color:"#8892B0",textAlign:"center",padding:"16px 0"}}>Aucune commande ce mois.</p>;
+            const maxCa=Math.max(...datesMois.map(d=>byDateMois[d].filter(c=>c.paiementConfirme).reduce((s,c)=>s+c.total,0)),1);
+            return datesMois.map(date=>{
+              const cmds=byDateMois[date];
+              const dayCa=cmds.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
+              return (
+                <div key={date} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${BDR}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                    <div><p style={{fontWeight:700,fontSize:13}}>📅 {date}</p><p style={{fontSize:11,color:"#8892B0"}}>{cmds.length} cmd(s)</p></div>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:CYAN}}>{fmt(dayCa)} F</p>
+                  </div>
+                  <div style={{height:4,background:"#1A2240",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${(dayCa/maxCa)*100}%`,background:`linear-gradient(90deg,${BLU},${CYAN})`,borderRadius:99}} />
+                  </div>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          VUE JOURNALIÈRE (existante)
+      ══════════════════════════════════════════ */}
+      {!vueMensuelle&&(
       <div style={{display:"flex",gap:8,marginBottom:16}}>
         {[{id:"today",l:"Auj."},{id:"week",l:"7 jours"},{id:"month",l:"30 jours"},{id:"all",l:"Total"}].map(p=>(
           <button key={p.id} onClick={()=>setPeriod(p.id)} style={{flex:1,background:period===p.id?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${period===p.id?BLU2:BDR}`,borderRadius:12,padding:"10px",color:period===p.id?"#fff":"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>{p.l}</button>
@@ -1627,6 +1939,7 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
           </div>
         );
       })}
+      </div>)} {/* fin !vueMensuelle */}
     </div>
   );
 }
@@ -2229,8 +2542,8 @@ function HistoriqueFactures({ commandes, tarifs }) {
 
                       {/* Infos client */}
                       {[["N° Ticket",sel.id],["Date",sel.date],["Client",sel.client],sel.tel?["Téléphone",sel.tel]:null,sel.codeClient?["Code",sel.codeClient]:null]
-                        .filter(Boolean).map(([k,v],idx)=>(
-                        <div key={idx} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                        .filter(Boolean).map(([k,v])=>(
+                        <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
                           <span style={{color:"#8892B0",fontSize:12}}>{k}</span>
                           <span style={{fontWeight:700,fontSize:12}}>{v}</span>
                         </div>
@@ -2534,7 +2847,7 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,cloturesMensuelles,upsertClotureMensuelle,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
   const [tab,setTab]=useState("home");
   const [employeActif, setEmployeActif] = useState(employeInitial||null);
 useEffect(()=>{
@@ -2858,7 +3171,7 @@ useEffect(()=>{
 
       {tab==="livraisons"&&<GestionLivreurs livreurs={livreurs} setLivreurs={setLivreurs} commandes={commandes} setCommandes={setCommandes} />}
 
-      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} clotures={clotures} upsertCloture={upsertCloture} />}
+      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} clotures={clotures} upsertCloture={upsertCloture} cloturesMensuelles={cloturesMensuelles} upsertClotureMensuelle={upsertClotureMensuelle} />}
       {tab==="plus"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
@@ -3385,14 +3698,15 @@ export default function App(){
   const [statutLaverie,  saveStatutLaverie,  statReady] = useFireDoc("config","statut",    {ouvert:true,message:""});
   const [objectifJour,   saveObjectifJour,   objReady]  = useFireDoc("config","objectif",  {montant:50000});
   const [depenses,       upsertDepense,      removeDepense, depReady] = useFireCollection("depenses", []);
-  const [clotures,       upsertCloture,      removeCloture, clotReady] = useFireCollection("clotures", []);
+  const [clotures,           upsertCloture,          removeCloture,     clotReady]      = useFireCollection("clotures", []);
+  const [cloturesMensuelles, upsertClotureMensuelle, _rmClotMens,       clotMensReady]  = useFireCollection("cloturesMensuelles", []);
   const [employes,       upsertEmploye,      removeEmploye, empReady]  = useFireCollection("employes", []);
  const [journal,        upsertJournal,      _rmJournal,    jourReady] = useFireCollection("journal",  []);
   const [produits,       upsertProduit,      removeProduit, prodReady] = useFireCollection("produits", []);
   const [stockMvts,      upsertStockMvt,     _rmStockMvt,   stockReady]= useFireCollection("stockMvts", []);
   const [showLogin,       setShowLogin]       = useState(false);
   const [employeActifApp, setEmployeActifApp] = useState(null);
- const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&empReady&&jourReady&&prodReady&&stockReady;
+ const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&clotMensReady&&empReady&&jourReady&&prodReady&&stockReady;
 
   function setCommandes(fn){
     const prev = commandes;
@@ -3461,6 +3775,7 @@ export default function App(){
         statutLaverie={statutLaverie} saveStatutLaverie={saveStatutLaverie}
         depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense}
         clotures={clotures} upsertCloture={upsertCloture}
+        cloturesMensuelles={cloturesMensuelles} upsertClotureMensuelle={upsertClotureMensuelle}
         objectifJour={objectifJour} saveObjectifJour={saveObjectifJour}
         gerantPin={gerantPin} setGerantPin={setGerantPin}
         adminPw={adminPw} setAdminPw={setAdminPw}
