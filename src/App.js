@@ -1940,7 +1940,6 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
           </div>
         );
       })}
-      </div>
       </>)} {/* fin !vueMensuelle */}
     </div>
   );
