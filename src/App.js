@@ -3090,23 +3090,127 @@ useEffect(()=>{
 
       {tab==="home"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
-          <div style={{textAlign:"center",marginBottom:20}}>
-            <Logo size={80} style={{margin:"0 auto 12px"}} />
-            <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,letterSpacing:3}}>JOKER LAVERIE & SERVICE</h1>
-            <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>Agoe Cacaveli, 2ème von après Batir, Lomé</p>
+          {/* En-tête */}
+          <div style={{textAlign:"center",marginBottom:16}}>
+            <Logo size={64} style={{margin:"0 auto 10px"}} />
+            <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3}}>JOKER LAVERIE & SERVICE</h1>
+            <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>Agoe Cacaveli · Lomé</p>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
-            {[{l:"CA total",v:fmt(ca)+" F",i:"💰",c:CYAN},{l:"Commandes",v:commandes.length,i:"🧺",c:BLU2},{l:"Livreurs actifs",v:livreurs.filter(l=>l.actif).length,i:"🛵",c:"#A855F7"},{l:"Alertes",v:alerts,i:"🔔",c:"#FFB800"}].map(s=>(
-              <div key={s.l} style={{background:`linear-gradient(135deg,#0D1F6E22,#1A3EBD11)`,borderRadius:18,padding:16,border:`1px solid ${s.c}30`}}>
-                <div style={{fontSize:22,marginBottom:6}}>{s.i}</div>
-                <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:s.c}}>{s.v}</p>
-                <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{s.l}</p>
+
+          {/* KPIs */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            {(()=>{
+              const caJour=commandes.filter(c=>c.date===todayStr()&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+              const caHier=(()=>{
+                const hier=new Date(); hier.setDate(hier.getDate()-1);
+                const hierStr=hier.toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
+                return commandes.filter(c=>c.date===hierStr&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+              })();
+              const diff=caHier>0?Math.round(((caJour-caHier)/caHier)*100):null;
+              return [
+                {l:"CA aujourd'hui",    v:fmt(caJour)+" F",     i:"💰", c:CYAN,    sub:diff!==null?(diff>=0?"↑ "+diff+"% vs hier":"↓ "+Math.abs(diff)+"% vs hier"):"Premier jour", subC:diff>=0?"#4ADE80":"#FF6B6B"},
+                {l:"Non payées",        v:commandes.filter(c=>!c.paiementConfirme&&c.statut!=="En cours").length, i:"⏳", c:"#FFB800", sub:"À encaisser",               subC:"#FFB800"},
+                {l:"Prêt & en attente", v:commandes.filter(c=>c.statut==="Prêt").length,                          i:"✅", c:"#4ADE80", sub:"Linge à récupérer",         subC:"#4ADE80"},
+                {l:"Alertes",           v:alerts,                                                                   i:"🔔", c:"#FF6B6B", sub:alerts>0?"Action requise":"Tout est OK",subC:alerts>0?"#FF6B6B":"#4ADE80"},
+              ].map(s=>(
+                <div key={s.l} onClick={()=>{ if(s.l==="Non payées"||s.l==="Prêt & en attente") setTab("commandes"); if(s.l==="Alertes") setTab("livraisons"); }} style={{background:`linear-gradient(135deg,#0D1F6E22,#1A3EBD11)`,borderRadius:18,padding:14,border:`1px solid ${s.c}30`,cursor:"pointer"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                    <span style={{fontSize:20}}>{s.i}</span>
+                    <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,color:s.c,lineHeight:1}}>{s.v}</span>
+                  </div>
+                  <p style={{fontSize:11,color:"#8892B0",marginBottom:3}}>{s.l}</p>
+                  <p style={{fontSize:10,color:s.subC,fontWeight:600}}>{s.sub}</p>
+                </div>
+              ));
+            })()}
+          </div>
+
+          {/* Bouton nouvelle commande */}
+          <button onClick={()=>setTab("nouvelle")} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:16,padding:16,color:"#fff",fontWeight:700,fontSize:16,cursor:"pointer",boxShadow:`0 8px 24px rgba(26,62,189,0.4)`,marginBottom:14}}>➕ Nouvelle commande</button>
+
+          {/* Linge prêt non récupéré */}
+          {(()=>{
+            const prets=commandes.filter(c=>c.statut==="Prêt").sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+            if(prets.length===0) return null;
+            return (
+              <div style={{marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <p style={{fontSize:11,color:"#4ADE80",letterSpacing:2,textTransform:"uppercase",fontWeight:700}}>✅ Linge prêt ({prets.length})</p>
+                  <button onClick={()=>setTab("commandes")} style={{background:"none",border:"none",color:BLU2,fontSize:11,cursor:"pointer",fontWeight:700}}>Voir tout →</button>
+                </div>
+                {prets.slice(0,3).map(c=>{
+                  const attenteMn=c.createdAt?Math.floor((Date.now()-c.createdAt)/60000):null;
+                  const attenteStr=attenteMn===null?"":attenteMn<60?attenteMn+"min":attenteMn<1440?Math.floor(attenteMn/60)+"h":Math.floor(attenteMn/1440)+"j";
+                  const urgent=attenteMn&&attenteMn>4320; // >3 jours
+                  return (
+                    <div key={c.id} style={{background:urgent?"#1A0800":CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${urgent?"#FF6B6B40":"#4ADE8030"}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <p style={{fontWeight:700,fontSize:14}}>{c.client}</p>
+                        <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{c.id} · {fmt(c.total)} F {c.paiementConfirme?"✅":""}</p>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+                        {attenteStr&&<span style={{fontSize:10,color:urgent?"#FF6B6B":"#8892B0",fontWeight:700}}>⏱️ {attenteStr}</span>}
+                        {c.tel&&<button onClick={e=>{e.stopPropagation();sendWhatsApp(c.tel,`🃏 *JOKER Laverie*\n\nBonjour ${c.client} ! 👋\n\n✅ Votre linge est *prêt* à être récupéré.\n\n🎫 Ticket : ${c.id}\n💰 ${fmt(c.total)} FCFA\n\nNous vous attendons ! 🙏`);}} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:8,padding:"4px 8px",color:"#25D366",fontWeight:700,fontSize:11,cursor:"pointer"}}>💬 Notifier</button>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-          {alerts>0&&<div style={{background:"#1A0D3D",borderRadius:14,padding:"12px 16px",border:"1px solid #A855F750",display:"flex",gap:8,alignItems:"center",marginBottom:14}}><span>⚡</span><p style={{color:"#A855F7",fontWeight:700,fontSize:13}}>{aConfirmer>0?`${aConfirmer} poids à confirmer · `:""}{enAttente>0?`${enAttente} livraison(s) en attente`:""}</p></div>}
-          <button onClick={()=>setTab("nouvelle")} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:16,padding:18,color:"#fff",fontWeight:700,fontSize:16,cursor:"pointer",boxShadow:`0 8px 24px rgba(26,62,189,0.4)`,marginBottom:14}}>➕ Nouvelle commande</button>
-          <STitle text="Récentes" />
+            );
+          })()}
+
+          {/* Non payées urgentes */}
+          {(()=>{
+            const nonPayees=commandes.filter(c=>!c.paiementConfirme&&c.statut==="Prêt");
+            if(nonPayees.length===0) return null;
+            return (
+              <div style={{marginBottom:14}}>
+                <p style={{fontSize:11,color:"#FFB800",letterSpacing:2,textTransform:"uppercase",fontWeight:700,marginBottom:8}}>⏳ À encaisser ({nonPayees.length})</p>
+                {nonPayees.slice(0,3).map(c=>(
+                  <div key={c.id} style={{background:"#1A0D00",borderRadius:14,padding:"12px 14px",marginBottom:8,border:"1px solid #FFB80030",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <p style={{fontWeight:700,fontSize:14}}>{c.client}</p>
+                      <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{c.id}</p>
+                    </div>
+                    <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,color:"#FFB800"}}>{fmt(c.total)} F</p>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {/* Mini graphique 7 jours */}
+          {(()=>{
+            const days=[];
+            for(let i=6;i>=0;i--){
+              const d=new Date(); d.setDate(d.getDate()-i);
+              const label=d.toLocaleDateString("fr-FR",{day:"numeric",month:"short"});
+              const ca=commandes.filter(c=>c.date===label&&c.paiementConfirme).reduce((s,c)=>s+c.total,0);
+              days.push({label,ca,isToday:i===0});
+            }
+            const maxCa=Math.max(...days.map(d=>d.ca),1);
+            const total7=days.reduce((s,d)=>s+d.ca,0);
+            if(total7===0) return null;
+            return (
+              <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                  <p style={{fontWeight:700,fontSize:13}}>📈 7 derniers jours</p>
+                  <p style={{color:CYAN,fontWeight:700,fontSize:13}}>{fmt(total7)} F</p>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"flex-end",height:60}}>
+                  {days.map(d=>(
+                    <div key={d.label} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                      <div style={{width:"100%",background:d.isToday?CYAN:BLU2,borderRadius:"4px 4px 0 0",height:d.ca>0?`${Math.max(8,Math.round((d.ca/maxCa)*52))}px`:"3px",opacity:d.isToday?1:0.6,transition:"height 0.4s ease"}} />
+                      <p style={{fontSize:8,color:d.isToday?CYAN:"#8892B0",fontWeight:d.isToday?700:400,whiteSpace:"nowrap"}}>{d.label.split(" ")[0]}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Récentes */}
+          <p style={{fontSize:11,color:"#8892B0",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Récentes</p>
           {commandes.slice(0,3).map(c=>(
             <div key={c.id} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",border:`1px solid ${BDR}`}}>
               <div><p style={{fontWeight:700,fontSize:14}}>{c.client}</p><p style={{fontSize:12,color:"#8892B0"}}>{c.id} · {c.poids}kg</p></div>
