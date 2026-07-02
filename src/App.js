@@ -1285,7 +1285,7 @@ function GestionLivreurs({ livreurs,setLivreurs,commandes,setCommandes }){
 }
 
 // ─── CAISSE ───────────────────────────────────────────────
-function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour,clotures=[],upsertCloture,cloturesMensuelles=[],upsertClotureMensuelle }){
+function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objectifJour=50000,saveObjectifJour,clotures=[],upsertCloture,cloturesMensuelles=[],upsertClotureMensuelle,ventesFriperie=[] }){
   const [period,setPeriod]=useState("today");
   const [showDepenses,setShowDepenses]=useState(false);
   const [showObjectif,setShowObjectif]=useState(false);
@@ -1909,6 +1909,24 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
         ))}
       </div>
       <STitle text="Par mode de paiement" />
+      {(()=>{
+        const vfFiltered = ventesFriperie.filter(v=>
+          period==="today" ? v.date===today :
+          period==="week"  ? weekDates.includes(v.date) :
+          period==="month" ? monthDates.includes(v.date) : true
+        );
+        const caFrip = vfFiltered.reduce((s,v)=>s+(v.prix||0),0);
+        if(caFrip===0) return null;
+        return (
+          <div style={{background:"linear-gradient(135deg,#1A0D3D,#2D1060)",borderRadius:16,padding:"14px 16px",marginBottom:10,border:"1px solid #A855F740",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <p style={{fontWeight:700,fontSize:14,color:"#A855F7"}}>👗 Ventes friperie</p>
+              <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{vfFiltered.length} article(s) · CA total laverie+friperie : {fmt(ca+caFrip)} F</p>
+            </div>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:"#A855F7"}}>+{fmt(caFrip)} F</p>
+          </div>
+        );
+      })()}
       {byPmt.map(p=>(
         <div key={p.id} style={{background:CARD,borderRadius:16,padding:"14px 16px",marginBottom:10,border:`1px solid ${BDR}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -2220,20 +2238,21 @@ function GestionRecompenses({ rewards,setRewards }){
 }
 
 // ─── FRIPERIE ─────────────────────────────────────────────
-function Friperie({ friperie, setFriperie }){
+function Friperie({ friperie, setFriperie, upsertVenteFriperie }){
   const [show,     setShow]    = useState(false);
   const [editId,   setEditId]  = useState(null);
   const [editPrix, setEditPrix]= useState("");
   const [msg,      setMsg]     = useState("");
   const [form,     setForm]    = useState({nom:"",taille:"M",prix:"",etat:"Excellent",emoji:"👕",photo:""});
-
-  const WA_NUM = "22879621085";
+  const [venteModal, setVenteModal] = useState(null); // article en cours de vente
+  const [ventePmt,   setVentePmt]   = useState("cash");
+  const [venteAcheteur, setVenteAcheteur] = useState("");
 
   function flash(m){ setMsg(m); setTimeout(()=>setMsg(""),2500); }
 
   function ajouter(){
     if(!form.nom||!form.prix) return;
-    setFriperie(p=>[...p,{...form,id:Date.now(),prix:parseInt(form.prix)}]);
+    setFriperie(p=>[...p,{...form,id:Date.now(),prix:parseInt(form.prix),statut:"disponible"}]);
     setForm({nom:"",taille:"M",prix:"",etat:"Excellent",emoji:"👕",photo:""});
     setShow(false); flash("✅ Article ajouté !");
   }
@@ -2244,10 +2263,31 @@ function Friperie({ friperie, setFriperie }){
     setEditId(null); setEditPrix(""); flash("✅ Prix mis à jour !");
   }
 
-  function commanderWA(item){
-    const msg = `Bonjour JOKER Laverie ! 👋%0A%0AJe suis intéressé(e) par cet article :%0A%0A👗 *${item.nom}*%0A📏 Taille : ${item.taille}%0A✨ État : ${item.etat}%0A💰 Prix : ${item.prix.toLocaleString("fr-FR")} FCFA%0A%0AEst-il encore disponible ?`;
-    window.open(`https://wa.me/${WA_NUM}?text=${msg}`, "_blank");
+  function confirmerVente(item){
+    // 1. Marquer l'article comme vendu
+    setFriperie(prev=>prev.map(x=>x.id===item.id?{...x,statut:"vendu",dateVente:todayStr(),acheteur:venteAcheteur||"Anonyme",paiementVente:ventePmt}:x));
+    // 2. Enregistrer dans les ventes friperie (pour la caisse)
+    if(upsertVenteFriperie){
+      upsertVenteFriperie({
+        id:"vf_"+item.id+"_"+Date.now(),
+        articleId:String(item.id),
+        nom:item.nom,
+        taille:item.taille,
+        prix:item.prix,
+        paiement:ventePmt,
+        acheteur:venteAcheteur||"Anonyme",
+        date:todayStr(),
+        ts:Date.now(),
+      });
+    }
+    setVenteModal(null);
+    setVenteAcheteur("");
+    setVentePmt("cash");
+    flash(`✅ Vente enregistrée ! ${fmt(item.prix)} FCFA ajoutés à la caisse.`);
   }
+
+  const disponibles = friperie.filter(f=>f.statut!=="vendu");
+  const vendus      = friperie.filter(f=>f.statut==="vendu");
 
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -2256,77 +2296,105 @@ function Friperie({ friperie, setFriperie }){
         <button onClick={()=>setShow(!show)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontWeight:700,cursor:"pointer"}}>+ Ajouter</button>
       </div>
 
+      {/* Stats rapides */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+        {[
+          {l:"En stock",   v:disponibles.length,                                              c:CYAN},
+          {l:"Vendus",     v:vendus.length,                                                    c:"#4ADE80"},
+          {l:"CA friperie",v:fmt(vendus.reduce((s,f)=>s+(f.prix||0),0))+" F",                 c:"#FFB800"},
+        ].map(s=>(
+          <div key={s.l} style={{background:CARD,borderRadius:14,padding:"10px 8px",border:`1px solid ${BDR}`,textAlign:"center"}}>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:s.c}}>{s.v}</p>
+            <p style={{fontSize:10,color:"#8892B0",marginTop:2}}>{s.l}</p>
+          </div>
+        ))}
+      </div>
+
       {msg&&<div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 16px",marginBottom:14,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700,fontSize:13}}>{msg}</p></div>}
+
+      {/* Modal vente */}
+      {venteModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"#0D1629",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:420,animation:"slideUp 0.3s ease"}}>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2,marginBottom:4}}>💳 Enregistrer la vente</p>
+            <p style={{color:"#8892B0",fontSize:13,marginBottom:16}}>{venteModal.nom} · {venteModal.taille} · {venteModal.etat}</p>
+            <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:18,padding:16,marginBottom:16,border:"1px solid rgba(0,194,255,0.3)",textAlign:"center"}}>
+              <p style={{color:"#8892B0",fontSize:11,textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>Prix de vente</p>
+              <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:40,color:CYAN}}>{fmt(venteModal.prix)} FCFA</p>
+            </div>
+            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Nom de l'acheteur (optionnel)</label>
+            <input value={venteAcheteur} onChange={e=>setVenteAcheteur(e.target.value)} placeholder="Ex: Marie Kofi"
+              style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:12}} />
+            <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:8}}>Mode de paiement</label>
+            <div style={{display:"flex",gap:8,marginBottom:20}}>
+              {PAIEMENTS.map(p=>(
+                <button key={p.id} onClick={()=>setVentePmt(p.id)} style={{flex:1,background:ventePmt===p.id?`${p.color}22`:CARD,border:`2px solid ${ventePmt===p.id?p.color:BDR}`,borderRadius:12,padding:"10px 4px",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                  <span style={{fontSize:18}}>{p.emoji}</span>
+                  <span style={{fontSize:10,fontWeight:700,color:ventePmt===p.id?p.color:"#8892B0"}}>{p.label}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={()=>confirmerVente(venteModal)} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:16,padding:15,color:"#fff",fontWeight:700,fontSize:15,cursor:"pointer",marginBottom:10}}>
+              ✅ Confirmer la vente
+            </button>
+            <button onClick={()=>setVenteModal(null)} style={{width:"100%",background:"none",border:"none",color:"#8892B0",fontWeight:600,fontSize:14,cursor:"pointer"}}>Annuler</button>
+          </div>
+        </div>
+      )}
 
       {/* Formulaire ajout */}
       {show&&(
         <div style={{background:CARD,borderRadius:20,padding:18,marginBottom:14,border:`1px solid ${BDR}`,animation:"fadeIn 0.3s ease"}}>
           <p style={{fontWeight:700,fontSize:15,color:BLU2,marginBottom:12}}>Nouvel article</p>
-
-          {/* URL Photo */}
           <div style={{marginBottom:12}}>
             <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Lien photo (URL)</p>
-            <input
-              value={form.photo}
-              onChange={e=>setForm(p=>({...p,photo:e.target.value}))}
-              placeholder="https://... (coller le lien de la photo)"
-              style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none"}}
-            />
-            {form.photo&&(
-              <img src={form.photo} alt="preview" style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,marginTop:8}} onError={e=>e.target.style.display="none"} />
-            )}
+            <input value={form.photo} onChange={e=>setForm(p=>({...p,photo:e.target.value}))} placeholder="https://..."
+              style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
+            {form.photo&&<img src={form.photo} alt="preview" style={{width:"100%",height:140,objectFit:"cover",borderRadius:12,marginTop:8}} onError={e=>e.target.style.display="none"} />}
           </div>
-
           {[{k:"nom",ph:"Nom de l'article"},{k:"prix",ph:"Prix en FCFA",type:"number"}].map(f=>(
             <input key={f.k} type={f.type||"text"} value={form[f.k]} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))} placeholder={f.ph}
               style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
           ))}
-
           <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>Taille</p>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             {["XS","S","M","L","XL","XXL"].map(sz=>(
               <button key={sz} onClick={()=>setForm(p=>({...p,taille:sz}))} style={{flex:1,background:form.taille===sz?`${BLU}40`:DARK,border:`1px solid ${form.taille===sz?BLU2:BDR}`,borderRadius:10,padding:"8px 4px",color:form.taille===sz?BLU2:"#8892B0",fontWeight:700,fontSize:11,cursor:"pointer"}}>{sz}</button>
             ))}
           </div>
-
           <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:6}}>État</p>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             {["Neuf","Excellent","Très bon","Bon"].map(e=>(
               <button key={e} onClick={()=>setForm(p=>({...p,etat:e}))} style={{flex:1,background:form.etat===e?`${BLU}40`:DARK,border:`1px solid ${form.etat===e?BLU2:BDR}`,borderRadius:10,padding:"8px 4px",color:form.etat===e?BLU2:"#8892B0",fontWeight:600,fontSize:10,cursor:"pointer"}}>{e}</button>
             ))}
           </div>
-
           <div style={{display:"flex",gap:8,marginBottom:12}}>
             {["👕","👔","👗","👖","🧥","👜"].map(e=>(
               <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{background:form.emoji===e?`${BLU}40`:DARK,border:`1px solid ${form.emoji===e?BLU2:BDR}`,borderRadius:10,padding:"8px",fontSize:18,cursor:"pointer"}}>{e}</button>
             ))}
           </div>
-
           <Btn label="Ajouter l'article" onClick={ajouter} disabled={!form.nom||!form.prix} />
         </div>
       )}
 
-      {/* Liste articles */}
+      {/* Articles disponibles */}
+      {disponibles.length===0&&!show&&(
+        <div style={{background:CARD,borderRadius:14,padding:24,textAlign:"center",border:`1px solid ${BDR}`,marginBottom:14}}>
+          <p style={{fontSize:36,marginBottom:8}}>👗</p>
+          <p style={{color:"#8892B0",fontSize:14}}>Aucun article en stock.</p>
+        </div>
+      )}
       <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
-        {friperie.length===0&&(
-          <div style={{background:CARD,borderRadius:14,padding:24,textAlign:"center",border:`1px solid ${BDR}`}}>
-            <p style={{fontSize:36,marginBottom:8}}>👗</p>
-            <p style={{color:"#8892B0",fontSize:14}}>Aucun article en stock.</p>
-          </div>
-        )}
-        {friperie.map(item=>(
+        {disponibles.map(item=>(
           <div key={item.id} style={{background:CARD,borderRadius:20,border:`1px solid ${BDR}`,overflow:"hidden"}}>
-            {/* Photo */}
-            <div style={{width:"100%",height:200,background:"#0A0F1E",position:"relative",overflow:"hidden"}}>
+            <div style={{width:"100%",height:180,background:"#0A0F1E",position:"relative",overflow:"hidden"}}>
               {item.photo
                 ? <img src={item.photo} alt={item.nom} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>e.target.style.display="none"} />
-                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:72}}>{item.emoji}</div>
+                : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:64}}>{item.emoji}</div>
               }
               <span style={{position:"absolute",top:8,left:8,background:"rgba(6,13,31,0.88)",borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,color:CYAN}}>{item.etat}</span>
               <span style={{position:"absolute",top:8,right:8,background:`linear-gradient(135deg,${BLU},${BLU2})`,borderRadius:8,padding:"4px 10px",fontSize:11,fontWeight:700,color:"#fff"}}>{item.taille}</span>
             </div>
-
-            {/* Infos */}
             <div style={{padding:"14px 16px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                 <p style={{fontWeight:700,fontSize:16,color:"#F8FAFF"}}>{item.nom}</p>
@@ -2340,16 +2408,35 @@ function Friperie({ friperie, setFriperie }){
                 ) : (
                   <button onClick={()=>{setEditId(item.id);setEditPrix(String(item.prix));}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"right"}}>
                     <p style={{color:CYAN,fontWeight:700,fontSize:20}}>{fmt(item.prix)} F</p>
-                    <p style={{fontSize:10,color:BLU2,marginTop:2}}>✏️ Modifier prix</p>
+                    <p style={{fontSize:10,color:BLU2,marginTop:2}}>✏️ Modifier</p>
                   </button>
                 )}
               </div>
-
-              <button onClick={()=>setFriperie(p=>p.filter(f=>f.id!==item.id))} style={{background:"none",border:"none",color:"#FF4444",fontSize:12,cursor:"pointer",fontWeight:600}}>🗑️ Retirer l'article</button>
+              {/* Bouton VENDRE */}
+              <button onClick={()=>setVenteModal(item)} style={{width:"100%",background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",marginBottom:8}}>
+                💰 Enregistrer une vente
+              </button>
+              <button onClick={()=>setFriperie(p=>p.filter(f=>f.id!==item.id))} style={{background:"none",border:"none",color:"#FF4444",fontSize:11,cursor:"pointer",fontWeight:600}}>🗑️ Retirer l'article</button>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Articles vendus */}
+      {vendus.length>0&&(
+        <div style={{marginBottom:20}}>
+          <p style={{fontSize:11,color:"#4ADE80",letterSpacing:2,textTransform:"uppercase",fontWeight:700,marginBottom:10}}>✅ Vendus ({vendus.length})</p>
+          {vendus.map(item=>(
+            <div key={item.id} style={{background:"#0D2A1A",borderRadius:16,padding:"12px 16px",marginBottom:8,border:"1px solid #4ADE8020",display:"flex",justifyContent:"space-between",alignItems:"center",opacity:0.8}}>
+              <div>
+                <p style={{fontWeight:700,fontSize:13,color:"#F8FAFF"}}>{item.emoji} {item.nom} — {item.taille}</p>
+                <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{item.acheteur||"Anonyme"} · {item.dateVente||"—"} · {PAIEMENTS.find(p=>p.id===item.paiementVente)?.label||"—"}</p>
+              </div>
+              <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:"#4ADE80"}}>{fmt(item.prix)} F</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -2874,7 +2961,7 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
-function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,cloturesMensuelles,upsertClotureMensuelle,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
+function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,cloturesMensuelles,upsertClotureMensuelle,ventesFriperie,upsertVenteFriperie,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
   const [tab,setTab]=useState("home");
   const [employeActif, setEmployeActif] = useState(employeInitial||null);
 useEffect(()=>{
@@ -3303,7 +3390,7 @@ useEffect(()=>{
 
       {tab==="livraisons"&&<GestionLivreurs livreurs={livreurs} setLivreurs={setLivreurs} commandes={commandes} setCommandes={setCommandes} />}
 
-      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} clotures={clotures} upsertCloture={upsertCloture} cloturesMensuelles={cloturesMensuelles} upsertClotureMensuelle={upsertClotureMensuelle} />}
+      {tab==="caisse"&&<Caisse commandes={commandes} tarifs={tarifs} depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense} objectifJour={objectifJour} saveObjectifJour={saveObjectifJour} clotures={clotures} upsertCloture={upsertCloture} cloturesMensuelles={cloturesMensuelles} upsertClotureMensuelle={upsertClotureMensuelle} ventesFriperie={ventesFriperie} />}
       {tab==="plus"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
           <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:14}}>Plus</h2>
@@ -3345,7 +3432,7 @@ useEffect(()=>{
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionRecompenses rewards={rewards} setRewards={setRewards} /></div>
       )}
       {tab==="friperie"&&(
-        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Friperie friperie={friperie} setFriperie={setFriperie} /></div>
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><Friperie friperie={friperie} setFriperie={setFriperie} upsertVenteFriperie={upsertVenteFriperie} /></div>
       )}
       {tab==="factures"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><HistoriqueFactures commandes={commandes} tarifs={tarifs} /></div>
@@ -3832,13 +3919,14 @@ export default function App(){
   const [depenses,       upsertDepense,      removeDepense, depReady] = useFireCollection("depenses", []);
   const [clotures,           upsertCloture,          removeCloture,     clotReady]      = useFireCollection("clotures", []);
   const [cloturesMensuelles, upsertClotureMensuelle, _rmClotMens,       clotMensReady]  = useFireCollection("cloturesMensuelles", []);
+  const [ventesFriperie,     upsertVenteFriperie,    _rmVenteFrip,      vfReady]        = useFireCollection("ventesFriperie", []);
   const [employes,       upsertEmploye,      removeEmploye, empReady]  = useFireCollection("employes", []);
  const [journal,        upsertJournal,      _rmJournal,    jourReady] = useFireCollection("journal",  []);
   const [produits,       upsertProduit,      removeProduit, prodReady] = useFireCollection("produits", []);
   const [stockMvts,      upsertStockMvt,     _rmStockMvt,   stockReady]= useFireCollection("stockMvts", []);
   const [showLogin,       setShowLogin]       = useState(false);
   const [employeActifApp, setEmployeActifApp] = useState(null);
- const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&clotMensReady&&empReady&&jourReady&&prodReady&&stockReady;
+ const allReady = cmdReady&&fripReady&&livReady&&cliReady&&tarReady&&rewReady&&pinReady&&pwReady&&pmtReady&&promoReady&&statReady&&objReady&&depReady&&clotReady&&clotMensReady&&vfReady&&empReady&&jourReady&&prodReady&&stockReady;
 
   function setCommandes(fn){
     const prev = commandes;
@@ -3908,6 +3996,7 @@ export default function App(){
         depenses={depenses} upsertDepense={upsertDepense} removeDepense={removeDepense}
         clotures={clotures} upsertCloture={upsertCloture}
         cloturesMensuelles={cloturesMensuelles} upsertClotureMensuelle={upsertClotureMensuelle}
+        ventesFriperie={ventesFriperie} upsertVenteFriperie={upsertVenteFriperie}
         objectifJour={objectifJour} saveObjectifJour={saveObjectifJour}
         gerantPin={gerantPin} setGerantPin={setGerantPin}
         adminPw={adminPw} setAdminPw={setAdminPw}
