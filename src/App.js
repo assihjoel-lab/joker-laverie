@@ -165,17 +165,32 @@ function PinScreen({ onSuccess, correctPin }){
 }
 
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
-function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,employeActif,produits,onAutoConsume,onBack,onCreated,onDone }){
-  const [nom,setNom]=useState("");
-  const [tel,setTel]=useState("");
+function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,employeActif,produits,onAutoConsume,onBack,onCreated,onDone,template }){
+  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
+
+  // Pré-remplissage depuis template (bouton "Recommander")
+  const initNom     = template?.client||"";
+  const initTel     = template?.tel||"";
+  const initPanier  = template?.panier?.map(s=>({
+    tarifId: s.tarifId,
+    poids:   s.type==="kg"?String(s.qte||s.poids||""):"",
+    qte:     s.type==="unite"?(s.qte||1):1,
+    isKg:    (s.type||"kg")==="kg",
+    note:    "",
+  }))||[];
+  const initPaiement= template?.paiement?PAIEMENTS.find(p=>p.id===template.paiement)||PAIEMENTS[0]:PAIEMENTS[0];
+  const initLiv     = template?.livraison||null;
+
+  const [nom,setNom]=useState(initNom);
+  const [tel,setTel]=useState(initTel);
   const [codeParrain,setCodeParrain]=useState("");
   const [source,setSource]=useState("");
   const [parrainValide,setParrainValide]=useState(null);
   const [showSuggestions,setShowSuggestions]=useState(false);
   const [servicesOpen,setServicesOpen]=useState(false);
-  const [panier,setPanier]=useState([]);  // [{tarifId,poids,qte,isKg}]
-  const [paiement,setPaiement]=useState(PAIEMENTS[0]);
-  const [livraison,setLiv]=useState(null);
+  const [panier,setPanier]=useState(initPanier);
+  const [paiement,setPaiement]=useState(initPaiement);
+  const [livraison,setLiv]=useState(initLiv);
   const [adresse,setAdresse]=useState("");
   const [ticket,setTicket]=useState(null);
   const [ticketPrint,setTicketPrint]=useState(null);
@@ -208,7 +223,6 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
   ];
 
   const isDepot=livraison==="depot"||livraison==="les-deux";
-  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
 
   function addService(tid){
     const t=tarifsDisp.find(x=>x.id===tid); if(!t) return;
@@ -346,6 +360,15 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <button onClick={onBack} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",marginBottom:14,fontSize:14}}>← Retour</button>
       <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2,marginBottom:16}}>Nouvelle Commande</h2>
+      {template&&(
+        <div style={{background:"#0D1F6E22",borderRadius:14,padding:"10px 14px",marginBottom:14,border:`1px solid ${BLU2}40`,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:18}}>🔁</span>
+          <div>
+            <p style={{fontWeight:700,fontSize:13,color:BLU2}}>Recommande de {template.client}</p>
+            <p style={{fontSize:11,color:"#8892B0"}}>Services et paiement pré-remplis · modifiez si besoin</p>
+          </div>
+        </div>
+      )}
       {/* ── Recherche client avec autocomplétion ── */}
       <div style={{marginBottom:12,position:"relative"}}>
         <label style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",display:"block",marginBottom:6}}>Nom *</label>
@@ -711,7 +734,7 @@ function QRCode({ value, size=120 }){
   );
 }
 
-function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel }){
+function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel,onRecommander }){
   const [edit,setEdit]=useState(false);
   const [nvP,setNvP]=useState(String(c.poids));
   const [confirmRefus,setConfirmRefus]=useState(false);
@@ -833,7 +856,10 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
 
       {/* Suppression avec confirmation */}
       {!confirmDel ? (
-        <button onClick={()=>setConfirmDel(true)} style={{width:"100%",background:"none",border:"none",color:"#8892B050",fontSize:11,cursor:"pointer",paddingTop:8,textAlign:"right",letterSpacing:0.5}}>🗑️ Supprimer cette commande</button>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8}}>
+          <button onClick={onRecommander} style={{background:"none",border:`1px solid ${BLU2}40`,borderRadius:10,color:BLU2,fontSize:11,cursor:"pointer",padding:"6px 10px",fontWeight:700}}>🔁 Recommander</button>
+          <button onClick={()=>setConfirmDel(true)} style={{background:"none",border:"none",color:"#8892B050",fontSize:11,cursor:"pointer",letterSpacing:0.5}}>🗑️ Supprimer</button>
+        </div>
       ) : (
         <div style={{marginTop:10,background:"#1A0A0A",borderRadius:14,padding:14,border:"1px solid #FF444430",animation:"fadeIn 0.2s ease"}}>
           <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13,marginBottom:4}}>⚠️ Supprimer cette commande ?</p>
@@ -2914,6 +2940,7 @@ useEffect(()=>{
     });
   },[commandes.length]);
   const [payCmd,setPayCmd]=useState(null);
+  const [cmdTemplate,setCmdTemplate]=useState(null); // pour "Recommander"
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
   const [livNotif,setLivNotif]=useState([]);
@@ -3220,7 +3247,7 @@ useEffect(()=>{
         </div>
       )}
 
-      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} employeActif={employeActif} produits={produits} onAutoConsume={(produitId,qte)=>mouvementStock(produitId,qte,"auto","Auto à la création de commande")} onBack={()=>setTab("home")} onCreated={(cmdInfo)=>{if(cmdInfo)logAction("commande",`${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);}} onDone={()=>setTab("commandes")} />}
+      {tab==="nouvelle"&&<NouvelleCommande commandes={commandes} setCommandes={setCommandes} upsertCmd={upsertCmd} clients={clients} upsertClient={upsertClient} tarifs={tarifs} promos={promos} employeActif={employeActif} produits={produits} onAutoConsume={(produitId,qte)=>mouvementStock(produitId,qte,"auto","Auto à la création de commande")} onBack={()=>{setTab("home");setCmdTemplate(null);}} onCreated={(cmdInfo)=>{if(cmdInfo)logAction("commande",`${cmdInfo.client} · ${cmdInfo.id} · ${fmt(cmdInfo.total)} F`);setCmdTemplate(null);}} onDone={()=>{setTab("commandes");setCmdTemplate(null);}} template={cmdTemplate} />}
 
       {tab==="commandes"&&(
         <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
@@ -3266,7 +3293,7 @@ useEffect(()=>{
                 lastDate=c.date;
               }
               elements.push(
-                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} />
+                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} onRecommander={()=>{setCmdTemplate(c);setTab("nouvelle");}} />
               );
             });
             return elements;
