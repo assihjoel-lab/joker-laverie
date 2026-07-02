@@ -3057,6 +3057,9 @@ useEffect(()=>{
   const alerts=enAttente+aConfirmer;
   const ca=commandes.reduce((s,c)=>s+c.total,0);
 
+  // ── Notification auto quand linge prêt ──
+  const [notifAutoCmd, setNotifAutoCmd] = useState(null); // commande en attente de confirmation notif
+
   function nextStatut(id){
     const cmdTarget=commandes.find(c=>c.id===id);
     if(cmdTarget){const m={"En cours":"Prêt","Prêt":"Récupéré"};logAction("statut",`${cmdTarget.client} · ${cmdTarget.id} → ${m[cmdTarget.statut]||cmdTarget.statut}`);}
@@ -3072,6 +3075,10 @@ useEffect(()=>{
           commandes:(cli.commandes||[]).map(h=>h.id===id?{...h,statut:newStatut}:h),
           historique:(cli.historique||[]).map(h=>h.id===id?{...h,statut:newStatut}:h)
         });
+      }
+      // Déclencher popup notification si passage à "Prêt" et client a un tel
+      if(newStatut==="Prêt"&&c.tel){
+        setTimeout(()=>setNotifAutoCmd(updated),300);
       }
       return updated;
     }));
@@ -3186,6 +3193,37 @@ useEffect(()=>{
       </div>
     )}
     {payCmd&&<PayModal c={payCmd} onClose={()=>setPayCmd(null)} onConfirm={(m)=>confirmerPaiement(payCmd.id,m)} />}
+
+      {/* ── POPUP NOTIFICATION AUTO LINGE PRÊT ── */}
+      {notifAutoCmd&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#0D1629",borderRadius:24,padding:24,width:"100%",maxWidth:360,border:`2px solid ${CYAN}50`,animation:"fadeIn 0.25s ease"}}>
+            <div style={{textAlign:"center",marginBottom:16}}>
+              <p style={{fontSize:40,marginBottom:8}}>✅</p>
+              <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2,marginBottom:4}}>Linge prêt !</p>
+              <p style={{color:"#8892B0",fontSize:13}}>Notifier <strong style={{color:"#F8FAFF"}}>{notifAutoCmd.client}</strong> par WhatsApp ?</p>
+            </div>
+
+            {/* Aperçu du message */}
+            <div style={{background:DARK,borderRadius:14,padding:14,marginBottom:16,border:`1px solid ${BDR}`}}>
+              <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>Message qui sera envoyé</p>
+              <p style={{fontSize:13,color:"#F8FAFF",lineHeight:1.6,whiteSpace:"pre-line"}}>{`🃏 *JOKER Laverie & Service*\n\n🎉 Bonjour ${notifAutoCmd.client} !\n\nVotre linge est *prêt* à être récupéré.\n\n🎫 Ticket : ${notifAutoCmd.id}\n💰 ${fmt(notifAutoCmd.total)} FCFA\n📞 ${notifAutoCmd.tel}\n\nPassez nous voir dès que possible !\nMerci de votre confiance 🙏`}</p>
+            </div>
+
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button onClick={()=>{
+                sendWhatsApp(notifAutoCmd.tel,`🃏 *JOKER Laverie & Service*\n\n🎉 Bonjour ${notifAutoCmd.client} !\n\nVotre linge est *prêt* à être récupéré.\n\n🎫 Ticket : ${notifAutoCmd.id}\n💰 ${fmt(notifAutoCmd.total)} FCFA\n\nPassez nous voir dès que possible !\nMerci de votre confiance 🙏`);
+                setNotifAutoCmd(null);
+              }} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:16,padding:15,color:"#25D366",fontWeight:700,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                💬 Envoyer le message WhatsApp
+              </button>
+              <button onClick={()=>setNotifAutoCmd(null)} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:16,padding:13,color:"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                ⏭️ Ignorer pour l'instant
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
       <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${BDR}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <Logo size={30} />
