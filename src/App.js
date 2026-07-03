@@ -2293,7 +2293,14 @@ function Friperie({ friperie, setFriperie, upsertVenteFriperie }){
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Friperie 👗</h2>
-        <button onClick={()=>setShow(!show)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontWeight:700,cursor:"pointer"}}>+ Ajouter</button>
+        <div style={{display:"flex",gap:8}}>
+          <button onClick={()=>{
+            const url=window.location.origin+"?vitrine=1";
+            if(navigator.share){navigator.share({title:"JOKER Friperie",url});}
+            else{navigator.clipboard.writeText(url).then(()=>flash("✅ Lien copié !"))||window.open(url,"_blank");}
+          }} style={{background:"#0D1F6E22",border:"1px solid #4A7BF740",borderRadius:12,padding:"8px 12px",color:"#4A7BF7",fontWeight:700,fontSize:12,cursor:"pointer"}}>🔗 Partager</button>
+          <button onClick={()=>show?setShow(false):setShow(true)} style={{background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontWeight:700,cursor:"pointer"}}>+ Ajouter</button>
+        </div>
       </div>
 
       {/* Stats rapides */}
@@ -3923,9 +3930,114 @@ function LoginScreen({ onBack }) {
 
 // ─── APP ──────────────────────────────────────────────────
 
+// ─── VITRINE PUBLIQUE FRIPERIE ────────────────────────────
+function VitrineFriperie({ friperie, statutLaverie }){
+  const WA_NUM = "22879621085";
+  const disponibles = (friperie||[]).filter(f=>f.statut!=="vendu");
+  const [filtre, setFiltre] = useState("Tout");
+  const [sel, setSel] = useState(null);
+  const tailles = ["Tout","XS","S","M","L","XL","XXL"];
+  const filtres = filtre==="Tout" ? disponibles : disponibles.filter(f=>f.taille===filtre);
+
+  function commander(item){
+    const msg = `Bonjour JOKER Laverie ! 👋\n\nJe suis intéressé(e) par cet article :\n\n${item.emoji} *${item.nom}*\n📏 Taille : ${item.taille}\n✨ État : ${item.etat}\n💰 Prix : ${fmt(item.prix)} FCFA\n\nEst-il encore disponible ?`;
+    window.open(`https://wa.me/${WA_NUM}?text=${encodeURIComponent(msg)}`,"_blank");
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#060D1F",color:"#F8FAFF",fontFamily:"'DM Sans',sans-serif",maxWidth:480,margin:"0 auto"}}>
+
+      {/* Header */}
+      <div style={{background:"linear-gradient(135deg,#0D1F6E,#1A3EBD)",padding:"20px 20px 16px",position:"sticky",top:0,zIndex:50}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <img src={LOGO_B64} alt="JOKER" style={{width:44,height:44,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,0.3)"}} />
+          <div>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,letterSpacing:3,lineHeight:1}}>JOKER LAVERIE</p>
+            <p style={{fontSize:11,color:"rgba(255,255,255,0.7)",letterSpacing:1}}>👗 Friperie · Lomé, Togo</p>
+          </div>
+          <div style={{marginLeft:"auto",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+            <span style={{background:statutLaverie?.ouvert?"#0D3B2E":"#3B0D0D",color:statutLaverie?.ouvert?"#4ADE80":"#FF6B6B",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,border:`1px solid ${statutLaverie?.ouvert?"#4ADE8040":"#FF444440"}`}}>{statutLaverie?.ouvert?"🟢 Ouvert":"🔴 Fermé"}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.5)"}}>{disponibles.length} article(s) dispo</span>
+          </div>
+        </div>
+        {/* Filtre tailles */}
+        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+          {tailles.map(t=>(
+            <button key={t} onClick={()=>setFiltre(t)} style={{flexShrink:0,background:filtre===t?"rgba(255,255,255,0.25)":"rgba(255,255,255,0.08)",border:`1px solid ${filtre===t?"rgba(255,255,255,0.5)":"rgba(255,255,255,0.1)"}`,borderRadius:20,padding:"5px 12px",color:"#fff",fontWeight:filtre===t?700:400,fontSize:12,cursor:"pointer"}}>{t}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Modal article sélectionné */}
+      {sel&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={()=>setSel(null)}>
+          <div style={{background:"#0D1629",borderRadius:"24px 24px 0 0",padding:"24px 20px 48px",width:"100%",maxWidth:480,animation:"slideUp 0.3s ease"}} onClick={e=>e.stopPropagation()}>
+            {sel.photo&&<img src={sel.photo} alt={sel.nom} style={{width:"100%",height:220,objectFit:"cover",borderRadius:16,marginBottom:16}} onError={e=>e.target.style.display="none"} />}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+              <div>
+                <p style={{fontWeight:700,fontSize:20}}>{sel.nom}</p>
+                <p style={{color:"#8892B0",fontSize:13,marginTop:2}}>Taille {sel.taille} · {sel.etat}</p>
+              </div>
+              <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:28,color:"#00C2FF"}}>{fmt(sel.prix)} F</p>
+            </div>
+            <button onClick={()=>commander(sel)} style={{width:"100%",background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:16,padding:16,color:"#25D366",fontWeight:700,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:10}}>
+              💬 Commander sur WhatsApp
+            </button>
+            <button onClick={()=>setSel(null)} style={{width:"100%",background:"none",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:13,color:"#8892B0",fontWeight:600,cursor:"pointer"}}>Fermer</button>
+          </div>
+        </div>
+      )}
+
+      {/* Contenu */}
+      <div style={{padding:"16px 16px 80px"}}>
+        {filtres.length===0&&(
+          <div style={{textAlign:"center",padding:"60px 20px"}}>
+            <p style={{fontSize:48,marginBottom:12}}>👗</p>
+            <p style={{color:"#8892B0",fontSize:15}}>{filtre==="Tout"?"Aucun article disponible pour le moment.":"Aucun article en taille "+filtre+"."}</p>
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          {filtres.map(item=>(
+            <div key={item.id} onClick={()=>setSel(item)} style={{background:"#111D3D",borderRadius:18,overflow:"hidden",cursor:"pointer",border:"1px solid rgba(74,123,247,0.15)",transition:"transform 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.02)"}
+              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+              <div style={{height:160,background:"#0A0F1E",position:"relative",overflow:"hidden"}}>
+                {item.photo
+                  ? <img src={item.photo} alt={item.nom} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";e.target.nextSibling.style.display="flex";}} />
+                  : null}
+                <div style={{width:"100%",height:"100%",display:item.photo?"none":"flex",alignItems:"center",justifyContent:"center",fontSize:52}}>{item.emoji}</div>
+                <span style={{position:"absolute",top:6,left:6,background:"rgba(6,13,31,0.85)",borderRadius:6,padding:"2px 7px",fontSize:10,fontWeight:700,color:"#00C2FF"}}>{item.etat}</span>
+                <span style={{position:"absolute",top:6,right:6,background:"linear-gradient(135deg,#1A3EBD,#4A7BF7)",borderRadius:6,padding:"2px 7px",fontSize:10,fontWeight:700,color:"#fff"}}>{item.taille}</span>
+              </div>
+              <div style={{padding:"10px 12px"}}>
+                <p style={{fontWeight:700,fontSize:13,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.nom}</p>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:18,color:"#00C2FF"}}>{fmt(item.prix)} F</p>
+                  <span style={{background:"#0D3B1A",color:"#25D366",borderRadius:8,padding:"3px 8px",fontSize:10,fontWeight:700}}>💬 WA</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Footer fixe */}
+      <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderTop:"1px solid rgba(74,123,247,0.15)",padding:"12px 16px 20px",textAlign:"center"}}>
+        <p style={{color:"#8892B0",fontSize:11,marginBottom:8}}>Des questions ? Contactez-nous directement</p>
+        <button onClick={()=>window.open(`https://wa.me/${WA_NUM}?text=${encodeURIComponent("Bonjour JOKER Laverie ! 👋\n\nJ'ai une question concernant la friperie.")}`, "_blank")} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:14,padding:"11px 24px",color:"#25D366",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+          💬 Nous écrire sur WhatsApp
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   const [user,      setUser]      = useState(null);
   const [authReady, setAuthReady] = useState(false);
+
+  // ── Détection mode vitrine ──
+  const isVitrine = new URLSearchParams(window.location.search).get("vitrine")==="1";
 
   useEffect(()=>{
     const unsub = onAuthStateChanged(auth, u=>{ setUser(u); setAuthReady(true); });
@@ -3941,6 +4053,17 @@ export default function App(){
   const [friperie,   upsertFrip,    removeFrip,  fripReady] = useFireCollection("friperie",   FRIPERIE_INIT);
   const [livreurs,   upsertLivreur, removeLivreur,livReady] = useFireCollection("livreurs",   LIVREURS_INIT);
   const [clients,    upsertClient,  removeClient, cliReady]  = useFireCollection("clients",    []);
+
+  // ── Mode vitrine publique : afficher sans auth ──
+  const [statutLaverieVitrine, , vitrineStatutReady] = useFireDoc("config","statut", {ouvert:true,message:""});
+  if(isVitrine){
+    if(!fripReady||!vitrineStatutReady) return (
+      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#060D1F"}}>
+        <p style={{color:"#4A7BF7",fontFamily:"'Bebas Neue',cursive",fontSize:18,letterSpacing:2}}>Chargement...</p>
+      </div>
+    );
+    return <VitrineFriperie friperie={friperie} statutLaverie={statutLaverieVitrine} />;
+  }
   function setClients(fn){
     const next=typeof fn==="function"?fn(clients):fn;
     next.forEach(c=>upsertClient(c));
