@@ -3450,6 +3450,7 @@ useEffect(()=>{
             {id:"fidelite",  icon:"🏅", label:"Programme fidélité",    sub:"Gérer les points clients"},
             {id:"recompenses",icon:"🎁",label:"Récompenses",           sub:"Modifier les récompenses"},
             {id:"friperie",  icon:"👗", label:"Friperie",              sub:"Gérer les articles"},
+            {id:"stock",     icon:"📦", label:"Fiche de stock",        sub:"Produits, entrées, sorties, alertes"},
             {id:"factures",  icon:"🧾", label:"Factures",             sub:"Historique et envoi WhatsApp"},
             {id:"reglages",  icon:"⚙️", label:"Réglages & Sécurité",  sub:"PIN, mots de passe, mobile money"},
             {id:"employes",  icon:"👥", label:"Employés & PIN",          sub:"Gérer les accès par employé"},
@@ -3606,6 +3607,9 @@ useEffect(()=>{
       )}
       {tab==="journal"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><JournalActions journal={journal||[]} employes={employes||[]} /></div>
+      )}
+      {tab==="stock"&&(
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionStock produits={produits||[]} upsertProduit={upsertProduit} removeProduit={removeProduit} stockMvts={stockMvts||[]} upsertStockMvt={upsertStockMvt} employeActif={employeActif} /></div>
       )}
 
       <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:420,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderTop:`1px solid ${BDR}`,display:"flex",justifyContent:"space-around",padding:"10px 0 18px",zIndex:100}}>
@@ -3929,6 +3933,283 @@ function LoginScreen({ onBack }) {
 }
 
 // ─── APP ──────────────────────────────────────────────────
+
+// ─── FICHE DE STOCK ───────────────────────────────────────
+const CATEGORIES_STOCK = ["Lessive","Assouplissant","Produit taches","Sacs","Emballage","Matériel","Autre"];
+const UNITES = ["kg","L","ml","unité(s)","rouleau(x)","pièce(s)"];
+
+function GestionStock({ produits, upsertProduit, removeProduit, stockMvts, upsertStockMvt, employeActif }){
+  const [tab,       setTab]       = useState("stock"); // "stock" | "historique"
+  const [showAdd,   setShowAdd]   = useState(false);
+  const [showMvt,   setShowMvt]   = useState(null);   // produit sélectionné pour mouvement
+  const [form,      setForm]      = useState({nom:"",categorie:"Lessive",unite:"kg",stock:0,seuil:2,emoji:"🧴",prix:0});
+  const [mvtType,   setMvtType]   = useState("entree");
+  const [mvtQte,    setMvtQte]    = useState("");
+  const [mvtNote,   setMvtNote]   = useState("");
+  const [msg,       setMsg]       = useState("");
+  const [filtreCat, setFiltreCat] = useState("Tout");
+
+  const EMOJIS_STOCK = ["🧴","🧺","🛍️","📦","🧻","🪣","💧","🫧","🧹","✂️","🔧","📋"];
+
+  function flash(m){ setMsg(m); setTimeout(()=>setMsg(""),2500); }
+
+  function ajouterProduit(){
+    if(!form.nom) return;
+    upsertProduit({...form, id:"prod_"+Date.now(), stock:parseFloat(form.stock)||0, seuil:parseFloat(form.seuil)||0, prix:parseFloat(form.prix)||0});
+    setForm({nom:"",categorie:"Lessive",unite:"kg",stock:0,seuil:2,emoji:"🧴",prix:0});
+    setShowAdd(false);
+    flash("✅ Produit ajouté !");
+  }
+
+  function enregistrerMvt(produit){
+    if(!mvtQte||parseFloat(mvtQte)<=0) return;
+    const qte = parseFloat(mvtQte);
+    const nouveauStock = mvtType==="entree"
+      ? (produit.stock||0)+qte
+      : Math.max(0,(produit.stock||0)-qte);
+    upsertProduit({...produit, stock:nouveauStock});
+    upsertStockMvt({
+      id:"mvt_"+Date.now(),
+      produitId: String(produit.id),
+      produitNom: produit.nom,
+      type: mvtType,
+      qte,
+      unite: produit.unite,
+      stockAvant: produit.stock||0,
+      stockApres: nouveauStock,
+      note: mvtNote.trim(),
+      employeNom: employeActif?.nom||"Gérant",
+      date: todayStr(),
+      heure: new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),
+      ts: Date.now(),
+    });
+    setShowMvt(null); setMvtQte(""); setMvtNote(""); setMvtType("entree");
+    flash(`${mvtType==="entree"?"✅ Entrée":"📤 Sortie"} de ${qte} ${produit.unite} enregistrée`);
+  }
+
+  const alertes = (produits||[]).filter(p=>(p.stock||0)<=(p.seuil||0));
+  const filtres  = filtreCat==="Tout" ? (produits||[]) : (produits||[]).filter(p=>p.categorie===filtreCat);
+  const cats     = ["Tout",...new Set((produits||[]).map(p=>p.categorie).filter(Boolean))];
+
+  return (
+    <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>📦 Stock</h2>
+        <button onClick={()=>setShowAdd(s=>!s)} style={{background:showAdd?"#1A0A0A":`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"8px 16px",color:"#fff",fontWeight:700,cursor:"pointer"}}>
+          {showAdd?"✕ Fermer":"+ Produit"}
+        </button>
+      </div>
+
+      {/* Onglets */}
+      <div style={{display:"flex",gap:8,marginBottom:14}}>
+        {[{id:"stock",l:"📦 Stock"},{id:"historique",l:"📋 Historique"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,background:tab===t.id?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${tab===t.id?BLU2:BDR}`,borderRadius:12,padding:"10px",color:tab===t.id?"#fff":"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>{t.l}</button>
+        ))}
+      </div>
+
+      {msg&&<div style={{background:"#0D3B2E",borderRadius:12,padding:"10px 16px",marginBottom:12,border:`1px solid ${CYAN}40`}}><p style={{color:CYAN,fontWeight:700,fontSize:13}}>{msg}</p></div>}
+
+      {/* Alertes stock bas */}
+      {alertes.length>0&&tab==="stock"&&(
+        <div style={{background:"#1A0800",borderRadius:16,padding:"12px 16px",marginBottom:14,border:"1px solid #FF6B6B40"}}>
+          <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13,marginBottom:8}}>⚠️ {alertes.length} produit(s) en stock bas</p>
+          {alertes.map(p=>(
+            <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid rgba(255,107,107,0.1)"}}>
+              <span style={{fontSize:13}}>{p.emoji} {p.nom}</span>
+              <span style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>{p.stock} {p.unite} <span style={{color:"#8892B0",fontWeight:400}}>/ seuil {p.seuil}</span></span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── VUE STOCK ── */}
+      {tab==="stock"&&(
+        <>
+          {/* Formulaire ajout */}
+          {showAdd&&(
+            <div style={{background:CARD,borderRadius:18,padding:18,marginBottom:14,border:`1px solid ${BLU2}40`,animation:"fadeIn 0.2s ease"}}>
+              <p style={{fontWeight:700,fontSize:15,color:BLU2,marginBottom:12}}>Nouveau produit</p>
+              {/* Emoji */}
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:12}}>
+                {EMOJIS_STOCK.map(e=>(
+                  <button key={e} onClick={()=>setForm(p=>({...p,emoji:e}))} style={{width:40,height:40,borderRadius:10,background:form.emoji===e?`${BLU}60`:DARK,border:`1px solid ${form.emoji===e?BLU2:BDR}`,fontSize:18,cursor:"pointer"}}>{e}</button>
+                ))}
+              </div>
+              <input value={form.nom} onChange={e=>setForm(p=>({...p,nom:e.target.value}))} placeholder="Nom du produit *"
+                style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:10}} />
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                <select value={form.categorie} onChange={e=>setForm(p=>({...p,categorie:e.target.value}))} style={{background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none"}}>
+                  {CATEGORIES_STOCK.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <select value={form.unite} onChange={e=>setForm(p=>({...p,unite:e.target.value}))} style={{background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none"}}>
+                  {UNITES.map(u=><option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+                {[
+                  {k:"stock",l:"Stock initial",c:CYAN},
+                  {k:"seuil",l:"Seuil alerte",c:"#FFB800"},
+                  {k:"prix",l:"Prix unitaire (F)",c:"#4ADE80"},
+                ].map(f=>(
+                  <div key={f.k}>
+                    <p style={{fontSize:10,color:"#8892B0",marginBottom:4}}>{f.l}</p>
+                    <input type="number" min="0" step="0.5" value={form[f.k]} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))}
+                      style={{width:"100%",background:DARK,border:`1px solid ${f.c}40`,borderRadius:10,padding:"9px",color:f.c,fontWeight:700,fontSize:15,outline:"none",textAlign:"center"}} />
+                  </div>
+                ))}
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={ajouterProduit} disabled={!form.nom} style={{flex:1,background:form.nom?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"13px",color:form.nom?"#fff":"#8892B0",fontWeight:700,cursor:form.nom?"pointer":"not-allowed"}}>✅ Ajouter</button>
+                <button onClick={()=>setShowAdd(false)} style={{background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"13px 16px",color:"#8892B0",cursor:"pointer"}}>✕</button>
+              </div>
+            </div>
+          )}
+
+          {/* Filtre catégories */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:12}}>
+            {cats.map(c=>(
+              <button key={c} onClick={()=>setFiltreCat(c)} style={{flexShrink:0,background:filtreCat===c?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${filtreCat===c?BLU2:BDR}`,borderRadius:20,padding:"6px 12px",color:filtreCat===c?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>{c}</button>
+            ))}
+          </div>
+
+          {/* Modal mouvement stock */}
+          {showMvt&&(
+            <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:9999,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+              <div style={{background:"#0D1629",borderRadius:"24px 24px 0 0",padding:"24px 20px 40px",width:"100%",maxWidth:420,animation:"slideUp 0.3s ease"}}>
+                <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:20,letterSpacing:2,marginBottom:4}}>Mouvement de stock</p>
+                <p style={{color:"#8892B0",fontSize:13,marginBottom:16}}>{showMvt.emoji} {showMvt.nom} · Stock actuel : <strong style={{color:CYAN}}>{showMvt.stock} {showMvt.unite}</strong></p>
+                {/* Type */}
+                <div style={{display:"flex",gap:8,marginBottom:14}}>
+                  <button onClick={()=>setMvtType("entree")} style={{flex:1,background:mvtType==="entree"?"#0D3B2E":CARD,border:`2px solid ${mvtType==="entree"?"#4ADE80":BDR}`,borderRadius:14,padding:"12px",color:mvtType==="entree"?"#4ADE80":"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer"}}>📥 Entrée</button>
+                  <button onClick={()=>setMvtType("sortie")} style={{flex:1,background:mvtType==="sortie"?"#1A0800":CARD,border:`2px solid ${mvtType==="sortie"?"#FF6B6B":BDR}`,borderRadius:14,padding:"12px",color:mvtType==="sortie"?"#FF6B6B":"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer"}}>📤 Sortie</button>
+                </div>
+                {/* Quantité */}
+                <p style={{fontSize:11,color:"#8892B0",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Quantité ({showMvt.unite})</p>
+                <div style={{display:"flex",gap:8,marginBottom:10,alignItems:"center"}}>
+                  <button onClick={()=>setMvtQte(q=>String(Math.max(0,(parseFloat(q)||0)-1)))} style={{width:44,height:44,borderRadius:12,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
+                  <input type="number" min="0" step="0.5" value={mvtQte} onChange={e=>setMvtQte(e.target.value)}
+                    style={{flex:1,background:DARK,border:`2px solid ${mvtType==="entree"?"#4ADE80":"#FF6B6B"}`,borderRadius:12,padding:"12px",color:mvtType==="entree"?"#4ADE80":"#FF6B6B",fontSize:26,fontWeight:700,outline:"none",textAlign:"center"}} />
+                  <button onClick={()=>setMvtQte(q=>String((parseFloat(q)||0)+1))} style={{width:44,height:44,borderRadius:12,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:22,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+                </div>
+                {/* Aperçu nouveau stock */}
+                {mvtQte&&(
+                  <div style={{background:DARK,borderRadius:12,padding:"10px 14px",marginBottom:10,display:"flex",justifyContent:"space-between",border:`1px solid ${BDR}`}}>
+                    <span style={{fontSize:13,color:"#8892B0"}}>Nouveau stock</span>
+                    <span style={{fontWeight:700,color:CYAN,fontSize:15}}>
+                      {mvtType==="entree"
+                        ? (showMvt.stock||0)+(parseFloat(mvtQte)||0)
+                        : Math.max(0,(showMvt.stock||0)-(parseFloat(mvtQte)||0))
+                      } {showMvt.unite}
+                    </span>
+                  </div>
+                )}
+                <input value={mvtNote} onChange={e=>setMvtNote(e.target.value)} placeholder="Note (ex: achat marché, utilisation...)"
+                  style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:"#F8FAFF",fontSize:13,outline:"none",marginBottom:14}} />
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>{setShowMvt(null);setMvtQte("");setMvtNote("");}} style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px",color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Annuler</button>
+                  <button onClick={()=>enregistrerMvt(showMvt)} disabled={!mvtQte||parseFloat(mvtQte)<=0}
+                    style={{flex:2,background:mvtQte&&parseFloat(mvtQte)>0?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:14,padding:"13px",color:mvtQte&&parseFloat(mvtQte)>0?"#fff":"#8892B0",fontWeight:700,fontSize:14,cursor:mvtQte&&parseFloat(mvtQte)>0?"pointer":"not-allowed"}}>
+                    ✅ Enregistrer
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Liste produits */}
+          {filtres.length===0&&!showAdd&&(
+            <div style={{background:CARD,borderRadius:16,padding:24,textAlign:"center",border:`1px solid ${BDR}`}}>
+              <p style={{fontSize:36,marginBottom:8}}>📦</p>
+              <p style={{color:"#8892B0",fontSize:14}}>Aucun produit. Cliquez "+ Produit" pour commencer.</p>
+            </div>
+          )}
+          <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+            {filtres.map(p=>{
+              const bas = (p.stock||0)<=(p.seuil||0);
+              const pct = p.seuil>0 ? Math.min(100,Math.round(((p.stock||0)/Math.max(p.seuil*3,1))*100)) : 100;
+              const couleur = bas?"#FF6B6B":(p.stock||0)<=(p.seuil||0)*2?"#FFB800":"#4ADE80";
+              return (
+                <div key={p.id} style={{background:CARD,borderRadius:18,padding:"14px 16px",border:`1px solid ${bas?"#FF6B6B30":BDR}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,flex:1}}>
+                      <div style={{width:44,height:44,borderRadius:12,background:`${BLU}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{p.emoji}</div>
+                      <div style={{flex:1}}>
+                        <p style={{fontWeight:700,fontSize:14}}>{p.nom}</p>
+                        <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{p.categorie} {p.prix>0?`· ${fmt(p.prix)} F/${p.unite}`:""}</p>
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:couleur,lineHeight:1}}>{p.stock}</p>
+                      <p style={{fontSize:10,color:"#8892B0"}}>{p.unite}</p>
+                      {bas&&<span style={{fontSize:9,color:"#FF6B6B",fontWeight:700}}>⚠️ BAS</span>}
+                    </div>
+                  </div>
+                  {/* Barre de stock */}
+                  <div style={{height:5,background:"#1A2240",borderRadius:99,overflow:"hidden",marginBottom:10}}>
+                    <div style={{height:"100%",width:pct+"%",background:couleur,borderRadius:99,transition:"width 0.5s ease"}} />
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:11,color:"#8892B0"}}>Seuil alerte : {p.seuil} {p.unite}</span>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>{setShowMvt(p);setMvtType("entree");}} style={{background:"#0D3B2E",border:"1px solid #4ADE8040",borderRadius:10,padding:"6px 10px",color:"#4ADE80",fontWeight:700,fontSize:12,cursor:"pointer"}}>📥 Entrée</button>
+                      <button onClick={()=>{setShowMvt(p);setMvtType("sortie");}} style={{background:"#1A0800",border:"1px solid #FF6B6B40",borderRadius:10,padding:"6px 10px",color:"#FF6B6B",fontWeight:700,fontSize:12,cursor:"pointer"}}>📤 Sortie</button>
+                      <button onClick={()=>removeProduit(String(p.id))} style={{background:"none",border:"none",color:"#8892B050",fontSize:16,cursor:"pointer"}}>🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Résumé valeur stock */}
+          {(produits||[]).length>0&&(()=>{
+            const valeurTotale=(produits||[]).reduce((s,p)=>(p.prix&&p.stock)?(s+p.prix*p.stock):s,0);
+            if(valeurTotale===0) return null;
+            return (
+              <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:16,padding:"14px 16px",marginBottom:20,border:`1px solid ${BDR}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <p style={{fontWeight:700,fontSize:13}}>💰 Valeur totale du stock</p>
+                  <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{(produits||[]).filter(p=>p.prix>0).length} produit(s) valorisés</p>
+                </div>
+                <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,color:CYAN}}>{fmt(Math.round(valeurTotale))} F</p>
+              </div>
+            );
+          })()}
+        </>
+      )}
+
+      {/* ── VUE HISTORIQUE ── */}
+      {tab==="historique"&&(
+        <div style={{marginBottom:20}}>
+          {(stockMvts||[]).length===0&&(
+            <div style={{background:CARD,borderRadius:16,padding:24,textAlign:"center",border:`1px solid ${BDR}`}}>
+              <p style={{fontSize:36,marginBottom:8}}>📋</p>
+              <p style={{color:"#8892B0",fontSize:14}}>Aucun mouvement enregistré.</p>
+            </div>
+          )}
+          {[...(stockMvts||[])].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(m=>(
+            <div key={m.id} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${m.type==="entree"?"#4ADE8020":"#FF6B6B20"}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+              <div style={{width:36,height:36,borderRadius:10,background:m.type==="entree"?"#0D3B2E":"#1A0800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
+                {m.type==="entree"?"📥":"📤"}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                  <p style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.produitNom}</p>
+                  <span style={{color:m.type==="entree"?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>
+                    {m.type==="entree"?"+":"-"}{m.qte} {m.unite}
+                  </span>
+                </div>
+                <p style={{fontSize:11,color:"#8892B0"}}>{m.date} {m.heure} · {m.employeNom}</p>
+                {m.stockAvant!==undefined&&<p style={{fontSize:10,color:"#8892B0",marginTop:2}}>{m.stockAvant} → {m.stockApres} {m.unite}</p>}
+                {m.note&&<p style={{fontSize:11,color:"#FFB800",marginTop:3,fontStyle:"italic"}}>📝 {m.note}</p>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── VITRINE PUBLIQUE FRIPERIE ────────────────────────────
 function VitrineFriperie({ friperie, statutLaverie }){
