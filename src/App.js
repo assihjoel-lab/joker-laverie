@@ -4,6 +4,23 @@ import { signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSession
 import { auth } from "./firebase";
 import { useFireCollection, useFireDoc } from "./hooks";
 
+// ── Mode hors-ligne Firebase ──────────────────────────────
+// Active le cache IndexedDB pour que l'app fonctionne sans internet
+import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+(async()=>{
+  try{
+    await enableIndexedDbPersistence(getFirestore());
+  }catch(e){
+    if(e.code==="failed-precondition"){
+      // Plusieurs onglets ouverts — mode offline désactivé sur cet onglet
+      console.warn("Firestore offline: plusieurs onglets ouverts");
+    } else if(e.code==="unimplemented"){
+      // Navigateur ne supporte pas IndexedDB
+      console.warn("Firestore offline non supporté par ce navigateur");
+    }
+  }
+})();
+
 // ─── CONFIG ──────────────────────────────────────────────
 const JOKER_FLOOZ_DEFAULT  = "+22879621085";
 const JOKER_TMONEY_DEFAULT = "+22893643596";
@@ -72,7 +89,14 @@ const LEVEL_SEUILS = [
 ];
 
 // ─── HELPERS ─────────────────────────────────────────────
-function genId()  { return "JK-"+String(Math.floor(Math.random()*900)+100); }
+function genId(commandes=[]){
+  // Numéro séquentiel basé sur les tickets existants
+  const nums = commandes
+    .map(c=>parseInt((c.id||"").replace("JK-",""),10))
+    .filter(n=>!isNaN(n));
+  const next = nums.length>0 ? Math.max(...nums)+1 : 1;
+  return "JK-"+String(next).padStart(3,"0");
+}
 function fmt(n)   { return Number(n).toLocaleString("fr-FR"); }
 function getLevel(pts) { return LEVEL_SEUILS.find(l=>pts>=l.min&&pts<=l.max)||LEVEL_SEUILS[0]; }
 function calcTotal(poids,tarif,livraison,fraisLivOverride,type="kg",qte=1){
@@ -261,7 +285,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const poidsTotal=panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
     const existingCli = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
     const codeClient = existingCli?.codeClient || ("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
-    const c={id:genId(),client:nom,tel,codeClient,
+    const c={id:genId(commandes),client:nom,tel,codeClient,
       employeId:employeActif?.id||null, employeNom:employeActif?.nom||null,
       note:noteCommande||"",
       panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""})),
@@ -612,27 +636,24 @@ function TicketModal({ c, tarifs, onClose }){
   const qrTarget = c.codeClient ? `${CLIENT_APP_URL}?code=${c.codeClient}` : `${CLIENT_APP_URL}?ticket=${c.id}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrTarget)}&bgcolor=ffffff&color=1A3EBD&qzone=1`;
 
-  function imprimer(){
+  function imprimer(format="58mm"){
+    const css58 = `*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Courier New',monospace;background:#fff;color:#111;width:58mm;margin:0;padding:2mm 3mm;font-size:10px;}.center{text-align:center;}.title{font-size:13px;font-weight:900;letter-spacing:2px;margin:3px 0;}.sub{font-size:7px;color:#555;letter-spacing:1px;}.sep{border:none;border-top:1px dashed #999;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:2px 0;font-size:9px;}.row span:first-child{color:#555;}.row span:last-child{font-weight:700;}.total{font-size:12px;font-weight:900;}.footer{font-size:8px;color:#888;margin-top:4px;line-height:1.5;text-align:center;}@media print{button{display:none!important;}}`;
+    const css80 = `*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}`;
+    const css = format==="58mm" ? css58 : css80;
+    const logo58 = format==="58mm" ? "" : `<img src="${LOGO_B64}" width="48" height="48" style="border-radius:50%;margin-bottom:4px;"/>`;
+    const qrSize = format==="58mm" ? 70 : 100;
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>${css}</style></head><body><div class="center">${logo58}<div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, Lomé, Togo</div>${format!=="58mm"?`<span class="badge">${c.statut||"En cours"}</span>`:""}</div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="font-size:8px;color:#b45309;margin:2px 0;">⚖️ Poids estimé</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Tél</span><span>${c.tel}</span></div>`:""}${c.codeClient?`<div class="row"><span>Code</span><span>${c.codeClient}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"Payé":"En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0}</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="${qrSize}" height="${qrSize}" style="display:block;margin:0 auto 3px;"/><div style="font-size:7px;color:#999;">Scannez pour suivre</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket.</div></body></html>`;
     if(isIOS){
-      // Sur iPhone: ouvrir le ticket dans un nouvel onglet pour partager/imprimer
-      const el = document.getElementById("joker-ticket-print");
-      if(!el) return;
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;max-width:340px;margin:0 auto;padding:16px;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:15px;font-weight:900;color:#1A3EBD;}.footer{font-size:10px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}.btn{display:block;width:100%;background:#1A3EBD;color:#fff;border:none;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px;cursor:pointer;}@media print{.btn{display:none!important;}.no-print{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, 2ème von après Batir, Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/><div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}${c.codeClient?`<div class="row"><span>Code client</span><span>${c.codeClient}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour voir vos commandes</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div><div class="no-print"><button class="btn" onclick="window.print()">🖨️ Imprimer</button><button class="btn" style="background:#555;margin-top:8px;" onclick="window.close()">← Retour</button></div></body></html>`;
-      const blob = new Blob([html], {type:"text/html;charset=utf-8"});
-      const url = URL.createObjectURL(blob);
-      window.location.href = url;
+      const blob = new Blob([ticketHTML],{type:"text/html;charset=utf-8"});
+      window.location.href = URL.createObjectURL(blob);
     } else {
-      // Sur PC/Android: ouvrir nouvelle fenêtre
-      const ticketHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Ticket ${c.id}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;background:#fff;color:#111;width:80mm;margin:0 auto;padding:8mm;}.center{text-align:center;}.title{font-size:18px;font-weight:900;letter-spacing:3px;margin:4px 0;}.sub{font-size:9px;color:#666;letter-spacing:2px;}.sep{border:none;border-top:1px dashed #bbb;margin:8px 0;}.badge{display:inline-block;background:#1A3EBD;color:#fff;border-radius:4px;padding:2px 10px;font-size:10px;font-weight:700;margin:4px 0;}.row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px solid #f0f0f0;}.row span:first-child{color:#666;}.row span:last-child{font-weight:700;}.total{font-size:14px;font-weight:900;color:#1A3EBD;}.footer{font-size:9px;color:#999;margin-top:8px;line-height:1.6;text-align:center;}@media print{button{display:none!important;}}</style></head><body><div class="center"><div class="title">JOKER LAVERIE</div><div class="sub">Agoe Cacaveli, 2ème von après Batir, Lomé</div><span class="badge">${c.statut||"En cours"}</span></div><hr class="sep"/>${c.poidsStatut==="estimated"?'<div style="background:#fff8e1;border:1px solid #ffb800;border-radius:4px;padding:4px;font-size:10px;color:#b45309;margin:4px 0;">⚖️ Poids estimé — à confirmer</div>':""}<div class="row"><span>N° Ticket</span><span>${c.id}</span></div><div class="row"><span>Date</span><span>${c.date}</span></div><div class="row"><span>Client</span><span>${c.client}</span></div>${c.tel?`<div class="row"><span>Téléphone</span><span>${c.tel}</span></div>`:""}${c.codeClient?`<div class="row"><span>Code client</span><span>${c.codeClient}</span></div>`:""}${buildServicesHTML(c,tarifs)}<hr class="sep"/><div class="row"><span>TOTAL</span><span class="total">${fmt(c.total)} FCFA</span></div><div class="row"><span>Paiement</span><span>${pmt.label}</span></div><div class="row"><span>Statut</span><span>${c.paiementConfirme?"✅ Payé":"⏳ En attente"}</span></div><div class="row"><span>Points</span><span>+${c.points||0} 🏅</span></div><hr class="sep"/><div class="center"><img src="${qrUrl}" width="100" height="100" style="display:block;margin:0 auto 4px;"/><div style="font-size:8px;color:#999;letter-spacing:1px;">Scannez pour voir vos commandes</div></div><hr class="sep"/><div class="footer">Merci de votre confiance !<br/>Conservez ce ticket pour le retrait.</div></body></html>`;
-      const w = window.open("","_blank","width=420,height=700");
+      const w = window.open("","_blank",format==="58mm"?"width=230,height=600":"width=420,height=700");
       if(w){ w.document.write(ticketHTML); w.document.close(); w.onload=()=>{w.focus();w.print();}; }
       else {
         const blob = new Blob([ticketHTML],{type:"text/html;charset=utf-8"});
-        const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        a.href=url; a.download=`ticket-${c.id}.html`; a.click();
-        URL.revokeObjectURL(url);
+        a.href=URL.createObjectURL(blob); a.download=`ticket-${c.id}.html`; a.click();
       }
     }
   }
@@ -643,7 +664,8 @@ function TicketModal({ c, tarifs, onClose }){
       {/* Boutons fixes en haut */}
       <div style={{display:"flex",gap:8,marginBottom:14,width:"100%",maxWidth:340,flexWrap:"wrap"}}>
         <button onClick={onClose} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,padding:"12px",color:"#8892B0",fontWeight:700,fontSize:14,cursor:"pointer"}}>← Retour</button>
-        <button onClick={imprimer} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>🖨️ Imprimer</button>
+        <button onClick={()=>imprimer("58mm")} style={{flex:1,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"12px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>🖨️ 58mm</button>
+        <button onClick={()=>imprimer("80mm")} style={{flex:1,background:"#1A2240",border:`1px solid ${BDR}`,borderRadius:14,padding:"12px",color:BLU2,fontWeight:700,fontSize:13,cursor:"pointer"}}>🖨️ A4</button>
       </div>
       {c.tel&&(
         <div style={{width:"100%",maxWidth:340,marginBottom:14}}>
