@@ -739,6 +739,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
   const [nvP,setNvP]=useState(String(c.poids));
   const [confirmRefus,setConfirmRefus]=useState(false);
   const [confirmDel,setConfirmDel]=useState(false);
+  const [confirmRendu,setConfirmRendu]=useState(false);
   const [editFrais,setEditFrais]=useState(false);
   const [nvFrais,setNvFrais]=useState(String(c.livraisonFrais||LIVRAISON_TARIF_DEFAULT));
   const nextLabel={"En cours":"✅ Prêt","Prêt":"📦 Rendu"};
@@ -830,7 +831,8 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         {c.paiementConfirme&&<span style={{background:"#0D3B2E",border:`1px solid ${CYAN}40`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700}}>✅ Payé</span>}
         {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>💬 Notifier</button>}
         <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
-        {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
+        {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&c.statut==="En cours"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
+        {c.statut==="Prêt"&&c.poidsStatut!=="estimated"&&!confirmRendu&&<button onClick={()=>setConfirmRendu(true)} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>📦 Rendu</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
         {/* Bouton confirmer récupération après livraison */}
         {c.livraison&&c.livraisonStatut==="confirmed"&&c.statut==="Prêt"&&(
@@ -851,6 +853,18 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         <div style={{marginTop:8,background:"#0D1A0D",borderRadius:10,padding:"8px 12px",border:"1px solid #4ADE8030",display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:14}}>{"⭐".repeat(c.note)}</span>
           {c.commentaire&&<span style={{fontSize:12,color:"#8892B0",fontStyle:"italic"}}>"{c.commentaire}"</span>}
+        </div>
+      )}
+
+      {/* Confirmation récupération */}
+      {confirmRendu&&(
+        <div style={{marginTop:10,background:"#0D1F6E22",borderRadius:14,padding:14,border:`1px solid ${BLU2}40`,animation:"fadeIn 0.2s ease"}}>
+          <p style={{color:CYAN,fontWeight:700,fontSize:13,marginBottom:4}}>📦 Confirmer la récupération ?</p>
+          <p style={{color:"#8892B0",fontSize:12,marginBottom:12}}>Le linge de <strong style={{color:"#F8FAFF"}}>{c.client}</strong> a bien été remis au client ?{!c.paiementConfirme&&<span style={{color:"#FFB800"}}> ⚠️ Paiement non confirmé !</span>}</p>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>{onNext();setConfirmRendu(false);}} style={{flex:1,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:12,padding:"10px",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Oui, remis</button>
+            <button onClick={()=>setConfirmRendu(false)} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"10px",color:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>↩️ Annuler</button>
+          </div>
         </div>
       )}
 
@@ -1392,6 +1406,45 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const byDate={};
   commandes.forEach(c=>{if(!byDate[c.date])byDate[c.date]=[];byDate[c.date].push(c);});
   const dates=Object.keys(byDate).reverse();
+
+  // ── Stats croisées ──
+  // 1. Services les plus commandés
+  const statsServices=(()=>{
+    const map={};
+    filtered.forEach(c=>{
+      (c.panier&&c.panier.length>0?c.panier:[{label:tarifs.find(t=>t.id===c.tarifId)?.label||"Lavage",qte:c.poids||0,type:"kg",prix:c.tarif||0}]).forEach(s=>{
+        const label=s.label||tarifs.find(t=>t.id===s.tarifId)?.label||"Inconnu";
+        if(!map[label]) map[label]={label,nb:0,ca:0};
+        map[label].nb+=1;
+        map[label].ca+=Math.round(parseFloat(s.qte||0)*(s.prix||tarifs.find(t=>t.id===s.tarifId)?.prix||0));
+      });
+    });
+    return Object.values(map).sort((a,b)=>b.nb-a.nb);
+  })();
+
+  // 2. Top clients par dépense
+  const statsClients=(()=>{
+    const map={};
+    filtered.filter(c=>c.paiementConfirme).forEach(c=>{
+      const k=c.client;
+      if(!map[k]) map[k]={nom:k,nb:0,total:0};
+      map[k].nb+=1; map[k].total+=c.total;
+    });
+    return Object.values(map).sort((a,b)=>b.total-a.total).slice(0,5);
+  })();
+
+  // 3. Jours de semaine les plus chargés
+  const JOURS=["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
+  const statsByDay=(()=>{
+    const map={0:{j:"Dim",nb:0,ca:0},1:{j:"Lun",nb:0,ca:0},2:{j:"Mar",nb:0,ca:0},3:{j:"Mer",nb:0,ca:0},4:{j:"Jeu",nb:0,ca:0},5:{j:"Ven",nb:0,ca:0},6:{j:"Sam",nb:0,ca:0}};
+    filtered.forEach(c=>{
+      if(!c.createdAt) return;
+      const d=new Date(c.createdAt).getDay();
+      map[d].nb+=1;
+      if(c.paiementConfirme) map[d].ca+=c.total;
+    });
+    return Object.values(map);
+  })();
 
   function exportCSV(){
     const rows = [
@@ -1968,6 +2021,84 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
         );
       })()}
       <STitle text="Recettes par jour" />
+
+      {/* ── STATS CROISÉES ── */}
+      {/* 1. Services les plus commandés */}
+      {statsServices.length>0&&(
+        <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+          <p style={{fontWeight:700,fontSize:14,marginBottom:12}}>🏆 Services les plus demandés</p>
+          {statsServices.slice(0,5).map((s,i)=>{
+            const maxNb=statsServices[0].nb||1;
+            const colors=["#FFD700","#C0C0C0","#CD7F32",BLU2,BLU2];
+            return (
+              <div key={s.label} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:13,fontWeight:i<3?700:400,color:i<3?colors[i]:"#F8FAFF"}}>
+                    {i===0?"🥇":i===1?"🥈":i===2?"🥉":"  "} {s.label}
+                  </span>
+                  <span style={{fontSize:12,color:"#8892B0"}}>{s.nb} cmd · {fmt(s.ca)} F</span>
+                </div>
+                <div style={{height:5,background:"#1A2240",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${(s.nb/maxNb)*100}%`,background:i<3?colors[i]:BLU2,borderRadius:99,transition:"width 0.5s ease"}} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 2. Top clients */}
+      {statsClients.length>0&&(
+        <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+          <p style={{fontWeight:700,fontSize:14,marginBottom:12}}>👑 Meilleurs clients</p>
+          {statsClients.map((c,i)=>{
+            const maxT=statsClients[0].total||1;
+            return (
+              <div key={c.nom} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <div style={{width:32,height:32,borderRadius:10,background:`${BLU}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:BLU2,flexShrink:0}}>
+                  {i===0?"👑":i+1}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:13,fontWeight:700}}>{c.nom}</span>
+                    <span style={{fontSize:12,color:CYAN,fontWeight:700}}>{fmt(c.total)} F</span>
+                  </div>
+                  <div style={{height:4,background:"#1A2240",borderRadius:99,overflow:"hidden"}}>
+                    <div style={{height:"100%",width:`${(c.total/maxT)*100}%`,background:`linear-gradient(90deg,${BLU},${CYAN})`,borderRadius:99}} />
+                  </div>
+                  <span style={{fontSize:10,color:"#8892B0"}}>{c.nb} commande(s)</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 3. Jours de semaine les plus chargés */}
+      {filtered.filter(c=>c.createdAt).length>0&&(
+        <div style={{background:CARD,borderRadius:18,padding:16,marginBottom:14,border:`1px solid ${BDR}`}}>
+          <p style={{fontWeight:700,fontSize:14,marginBottom:12}}>📅 Jours les plus chargés</p>
+          <div style={{display:"flex",gap:6,alignItems:"flex-end",height:70}}>
+            {statsByDay.map(d=>{
+              const maxNb=Math.max(...statsByDay.map(x=>x.nb),1);
+              const isMax=d.nb===maxNb&&d.nb>0;
+              return (
+                <div key={d.j} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+                  {isMax&&<span style={{fontSize:8,color:"#FFB800",fontWeight:700}}>MAX</span>}
+                  <div style={{width:"100%",background:isMax?"#FFB800":BLU2,borderRadius:"4px 4px 0 0",height:d.nb>0?`${Math.max(6,Math.round((d.nb/maxNb)*52))}px`:"3px",opacity:d.nb>0?1:0.3,transition:"height 0.5s ease"}} />
+                  <p style={{fontSize:10,color:isMax?"#FFB800":"#8892B0",fontWeight:isMax?700:400}}>{d.j}</p>
+                  {d.nb>0&&<p style={{fontSize:9,color:"#8892B0"}}>{d.nb}</p>}
+                </div>
+              );
+            })}
+          </div>
+          {(()=>{
+            const bestDay=statsByDay.reduce((a,b)=>b.nb>a.nb?b:a,statsByDay[0]);
+            if(bestDay.nb===0) return null;
+            return <p style={{fontSize:11,color:"#FFB800",marginTop:10,textAlign:"center",fontWeight:600}}>📌 {bestDay.j === "Lun"?"Lundi":bestDay.j==="Mar"?"Mardi":bestDay.j==="Mer"?"Mercredi":bestDay.j==="Jeu"?"Jeudi":bestDay.j==="Ven"?"Vendredi":bestDay.j==="Sam"?"Samedi":"Dimanche"} est votre jour le plus chargé</p>;
+          })()}
+        </div>
+      )}
       {dates.map(date=>{
         const cmds=byDate[date];
         const dayCa=cmds.filter(c=>c.paiementConfirme).reduce((s,c)=>s+(c.total||0),0);
@@ -3035,6 +3166,7 @@ useEffect(()=>{
   },[commandes.length]);
   const [payCmd,setPayCmd]=useState(null);
   const [cmdTemplate,setCmdTemplate]=useState(null); // pour "Recommander"
+  const [globalSearch,setGlobalSearch]=useState(""); // recherche globale
   const [cmdSearch,setCmdSearch]=useState("");
   const [cmdFilter,setCmdFilter]=useState("Tous");
   const [livNotif,setLivNotif]=useState([]);
@@ -3255,6 +3387,50 @@ useEffect(()=>{
             <h1 style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:3}}>JOKER LAVERIE & SERVICE</h1>
             <p style={{color:BLU2,fontSize:11,letterSpacing:2}}>Agoe Cacaveli · Lomé</p>
           </div>
+
+          {/* Recherche globale */}
+          {(()=>{
+            const terme=globalSearch.trim().toLowerCase();
+            const resultats=terme.length<2?[]:commandes.filter(c=>
+              c.client?.toLowerCase().includes(terme)||
+              c.id?.toLowerCase().includes(terme)||
+              c.tel?.includes(terme)||
+              c.codeClient?.toLowerCase().includes(terme)
+            ).slice(0,6);
+            return (
+              <div style={{position:"relative",marginBottom:14}}>
+                <input value={globalSearch} onChange={e=>setGlobalSearch(e.target.value)} placeholder="🔍 Recherche — client, ticket, téléphone..."
+                  style={{width:"100%",background:CARD,border:`1px solid ${globalSearch?BLU2:BDR}`,borderRadius:14,padding:"12px 15px",color:"#F8FAFF",fontSize:14,outline:"none"}} />
+                {resultats.length>0&&(
+                  <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:999,background:"#0D1629",border:`1px solid ${BLU2}60`,borderRadius:14,marginTop:4,overflow:"hidden",boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}>
+                    {resultats.map(c=>(
+                      <div key={c.id} onClick={()=>{setTab("commandes");setGlobalSearch("");}}
+                        style={{padding:"12px 16px",cursor:"pointer",borderBottom:`1px solid ${BDR}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="#1A3EBD22"}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        <div>
+                          <p style={{fontWeight:700,fontSize:14}}>{c.client}</p>
+                          <p style={{fontSize:11,color:"#8892B0"}}>{c.id} · {c.date} · {c.tel||"—"}</p>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <Badge statut={c.statut} />
+                          <p style={{color:CYAN,fontWeight:700,fontSize:13,marginTop:4}}>{fmt(c.total)} F</p>
+                        </div>
+                      </div>
+                    ))}
+                    <div onClick={()=>{setTab("commandes");setGlobalSearch("");}} style={{padding:"10px 16px",cursor:"pointer",textAlign:"center",color:BLU2,fontWeight:700,fontSize:12}}>
+                      Voir dans Commandes →
+                    </div>
+                  </div>
+                )}
+                {globalSearch.length>=2&&resultats.length===0&&(
+                  <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:999,background:"#0D1629",border:`1px solid ${BDR}`,borderRadius:14,marginTop:4,padding:"14px 16px"}}>
+                    <p style={{color:"#8892B0",fontSize:13,textAlign:"center"}}>Aucun résultat pour "{globalSearch}"</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* KPIs */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
