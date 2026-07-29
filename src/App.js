@@ -756,7 +756,7 @@ function QRCode({ value, size=120 }){
   );
 }
 
-function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel,onRecommander }){
+function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel,onRecommander,onEdit }){
   const [edit,setEdit]=useState(false);
   const [nvP,setNvP]=useState(String(c.poids));
   const [confirmRefus,setConfirmRefus]=useState(false);
@@ -853,6 +853,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         {c.paiementConfirme&&<span style={{background:"#0D3B2E",border:`1px solid ${CYAN}40`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700}}>✅ Payé</span>}
         {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>💬 Notifier</button>}
         <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
+        {c.statut!=="Récupéré"&&<button onClick={onEdit} style={{background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:10,color:"#A855F7",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>✏️</button>}
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&c.statut==="En cours"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {c.statut==="Prêt"&&c.poidsStatut!=="estimated"&&!confirmRendu&&<button onClick={()=>setConfirmRendu(true)} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>📦 Rendu</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
@@ -3121,6 +3122,152 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
 
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
+// ─── MODAL MODIFICATION COMMANDE ─────────────────────────
+function EditCmdModal({ c, tarifs, onClose, onSave }){
+  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
+  const [panier, setPanier] = useState(
+    c.panier&&c.panier.length>0
+      ? c.panier.map(s=>({tarifId:s.tarifId,poids:s.type==="kg"?String(s.qte||s.poids||""):"",qte:s.type==="unite"?(s.qte||1):1,isKg:(s.type||"kg")==="kg",note:s.note||""}))
+      : [{tarifId:c.tarifId,poids:String(c.poids||""),qte:1,isKg:true,note:""}]
+  );
+  const [remisePct, setRemisePct] = useState(c.remise||0);
+  const [note, setNote] = useState(c.note||"");
+  const [servicesOpen, setServicesOpen] = useState(false);
+
+  function addService(tid){
+    const t=tarifsDisp.find(x=>x.id===tid); if(!t) return;
+    const isKg=(t.type||"kg")==="kg";
+    setPanier(p=>[...p,{tarifId:tid,poids:"",qte:1,isKg,note:""}]);
+  }
+  function removeService(idx){ setPanier(p=>p.filter((_,i)=>i!==idx)); }
+  function updateService(idx,field,val){ setPanier(p=>p.map((s,i)=>i===idx?{...s,[field]:val}:s)); }
+
+  const sousTotal = panier.reduce((acc,s)=>{
+    const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return acc;
+    return acc+(s.isKg?(s.poids?Math.round(parseFloat(s.poids)*t.prix):0):Math.round(parseInt(s.qte||1)*t.prix));
+  },0);
+  const frais = c.livraison?(c.fraisLiv||LIVRAISON_TARIF_DEFAULT):0;
+  const remiseMontant = Math.round((sousTotal+frais)*remisePct/100);
+  const total = sousTotal+frais-remiseMontant;
+
+  function sauvegarder(){
+    if(panier.length===0||sousTotal===0) return;
+    const firstTarif = tarifsDisp.find(t=>t.id===panier[0]?.tarifId)||tarifsDisp[0];
+    const poidsTotal = panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
+    const updated = {
+      ...c,
+      panier: panier.map(s=>{
+        const t=tarifsDisp.find(x=>x.id===s.tarifId)||{label:"Service",prix:0};
+        return {tarifId:s.tarifId,label:t.label,prix:t.prix,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""};
+      }),
+      poids: poidsTotal,
+      tarifId: firstTarif.id, tarif: firstTarif.prix,
+      total, remise: remisePct, points: Math.floor(total/100),
+      note,
+    };
+    onSave(updated);
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",padding:"16px 12px",overflowY:"auto"}}>
+      <div style={{width:"100%",maxWidth:420,background:"#0D1629",borderRadius:24,padding:"20px 18px 30px",border:`1px solid ${BLU2}40`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2}}>✏️ Modifier la commande</p>
+            <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>{c.id} · {c.client}</p>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:10,color:"#8892B0",padding:"6px 12px",cursor:"pointer",fontSize:14}}>✕</button>
+        </div>
+
+        {/* Ajouter un service */}
+        <div style={{marginBottom:12}}>
+          <button onClick={()=>setServicesOpen(o=>!o)}
+            style={{width:"100%",background:servicesOpen?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${servicesOpen?BLU2:BDR}`,borderRadius:13,padding:"12px 16px",color:"#F8FAFF",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>➕ Ajouter un service</span>
+            <span style={{fontSize:16,transform:servicesOpen?"rotate(180deg)":"rotate(0deg)",display:"inline-block",transition:"transform 0.2s"}}>▾</span>
+          </button>
+          {servicesOpen&&(
+            <div style={{background:"#141E35",border:`1px solid ${BLU2}60`,borderRadius:13,marginTop:6,overflow:"hidden"}}>
+              {tarifsDisp.map((tr,i)=>(
+                <div key={tr.id} onClick={()=>{addService(tr.id);setServicesOpen(false);}}
+                  style={{padding:"12px 16px",cursor:"pointer",borderBottom:i<tarifsDisp.length-1?`1px solid ${BDR}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#0D1F6E44"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <span style={{fontWeight:700,fontSize:14}}>{(tr.type||"kg")==="kg"?"⚖️":"👕"} {tr.label}</span>
+                  <span style={{color:CYAN,fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{(tr.type||"kg")==="kg"?"kg":"pièce"}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Panier */}
+        {panier.map((s,idx)=>{
+          const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return null;
+          const ligneTotal=s.isKg?(s.poids?Math.round(parseFloat(s.poids)*t.prix):0):Math.round(parseInt(s.qte||1)*t.prix);
+          return (
+            <div key={idx} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${s.isKg?BDR:"rgba(168,85,247,0.25)"}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{fontWeight:700,fontSize:13,color:s.isKg?BLU2:"#A855F7"}}>{s.isKg?"⚖️":"👕"} {t.label}</span>
+                <button onClick={()=>removeService(idx)} style={{background:"none",border:"none",color:"#FF4444",fontSize:16,cursor:"pointer"}}>✕</button>
+              </div>
+              {s.isKg ? (
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <input type="number" step="0.5" value={s.poids} onChange={e=>updateService(idx,"poids",e.target.value)} placeholder="Poids (kg)"
+                    style={{flex:1,background:DARK,border:`1px solid ${BLU2}`,borderRadius:10,padding:"10px",color:CYAN,fontSize:20,fontWeight:700,outline:"none",textAlign:"center"}} />
+                  <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>kg × {fmt(t.prix)}F</span>
+                  {ligneTotal>0&&<span style={{color:CYAN,fontWeight:700,flexShrink:0}}>{fmt(ligneTotal)}F</span>}
+                </div>
+              ) : (
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <button onClick={()=>updateService(idx,"qte",Math.max(1,(parseInt(s.qte)||1)-1))} style={{width:40,height:40,borderRadius:10,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
+                  <input type="number" min="1" value={s.qte} onChange={e=>updateService(idx,"qte",Math.max(1,parseInt(e.target.value)||1))}
+                    style={{flex:1,background:DARK,border:"2px solid #A855F7",borderRadius:10,padding:"10px",color:"#A855F7",fontSize:20,fontWeight:700,outline:"none",textAlign:"center"}} />
+                  <button onClick={()=>updateService(idx,"qte",(parseInt(s.qte)||1)+1)} style={{width:40,height:40,borderRadius:10,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
+                  <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>× {fmt(t.prix)}F = <strong style={{color:"#A855F7"}}>{fmt(ligneTotal)}F</strong></span>
+                </div>
+              )}
+              <input type="text" value={s.note||""} onChange={e=>updateService(idx,"note",e.target.value)} placeholder="Note..."
+                style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"7px 10px",color:"#F8FAFF",fontSize:12,outline:"none",marginTop:8,boxSizing:"border-box"}} />
+            </div>
+          );
+        })}
+
+        {/* Note + réduction */}
+        <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Note générale..." rows={2}
+          style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"inherit",marginBottom:12}} />
+
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          {[0,5,10,15,20].map(p=>(
+            <button key={p} onClick={()=>setRemisePct(p)} style={{flex:1,background:remisePct===p?"linear-gradient(135deg,#4ADE80,#22C55E)":DARK,border:`1px solid ${remisePct===p?"#4ADE80":BDR}`,borderRadius:10,padding:"8px 4px",color:remisePct===p?"#000":"#8892B0",fontWeight:remisePct===p?700:400,fontSize:12,cursor:"pointer"}}>{p===0?"Aucune":`-${p}%`}</button>
+          ))}
+        </div>
+
+        {/* Récap total */}
+        {sousTotal>0&&(
+          <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:16,padding:16,marginBottom:16,border:"1px solid rgba(0,194,255,0.3)"}}>
+            {frais>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#8892B0",fontSize:13}}>Services</span><span>{fmt(sousTotal)} F</span></div>}
+            {frais>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7"}}>+{fmt(frais)} F</span></div>}
+            {remiseMontant>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#4ADE80",fontSize:13}}>Réduction ({remisePct}%)</span><span style={{color:"#4ADE80",fontWeight:700}}>-{fmt(remiseMontant)} F</span></div>}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8,borderTop:`1px solid rgba(255,255,255,0.08)`}}>
+              <span style={{color:"#8892B0",fontSize:14}}>NOUVEAU TOTAL</span>
+              <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,color:CYAN}}>{fmt(total)} FCFA</span>
+            </div>
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose} style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px",color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Annuler</button>
+          <button onClick={sauvegarder} disabled={panier.length===0||sousTotal===0}
+            style={{flex:2,background:sousTotal>0?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:14,padding:"13px",color:sousTotal>0?"#fff":"#8892B0",fontWeight:700,fontSize:15,cursor:sousTotal>0?"pointer":"not-allowed"}}>
+            💾 Sauvegarder
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,cloturesMensuelles,upsertClotureMensuelle,ventesFriperie,upsertVenteFriperie,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
   const [tab,setTab]=useState("home");
   const [employeActif, setEmployeActif] = useState(employeInitial||null);
@@ -3187,6 +3334,7 @@ useEffect(()=>{
     });
   },[commandes.length]);
   const [payCmd,setPayCmd]=useState(null);
+  const [editCmd,setEditCmd]=useState(null); // commande en cours de modification
   const [cmdTemplate,setCmdTemplate]=useState(null); // pour "Recommander"
   const [globalSearch,setGlobalSearch]=useState(""); // recherche globale
   const [cmdSearch,setCmdSearch]=useState("");
@@ -3352,6 +3500,19 @@ useEffect(()=>{
           <button onClick={()=>{setTab("commandes");setNotifPop(null);}} style={{flex:1,background:"#1A1030",border:"1px solid #A855F740",borderRadius:12,padding:"10px",color:"#A855F7",fontWeight:700,fontSize:13,cursor:"pointer"}}>📋 Commandes</button>
         </div>
       </div>
+    )}
+    {editCmd&&(
+      <EditCmdModal
+        c={editCmd}
+        tarifs={tarifs}
+        onClose={()=>setEditCmd(null)}
+        onSave={(updated)=>{
+          setCommandes(p=>p.map(c=>c.id===updated.id?updated:c));
+          upsertCmd(updated);
+          logAction("modification",`${updated.client} · ${updated.id} · ${fmt(updated.total)} F`);
+          setEditCmd(null);
+        }}
+      />
     )}
     {payCmd&&<PayModal c={payCmd} onClose={()=>setPayCmd(null)} onConfirm={(m)=>confirmerPaiement(payCmd.id,m)} />}
 
@@ -3623,7 +3784,7 @@ useEffect(()=>{
                 lastDate=c.date;
               }
               elements.push(
-                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} onRecommander={()=>{setCmdTemplate(c);setTab("nouvelle");}} />
+                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} onRecommander={()=>{setCmdTemplate(c);setTab("nouvelle");}} onEdit={()=>setEditCmd(c)} />
               );
             });
             return elements;
@@ -4385,24 +4546,37 @@ function GestionStock({ produits, upsertProduit, removeProduit, stockMvts, upser
               <p style={{color:"#8892B0",fontSize:14}}>Aucun mouvement enregistré.</p>
             </div>
           )}
-          {[...(stockMvts||[])].sort((a,b)=>(b.ts||0)-(a.ts||0)).map(m=>(
-            <div key={m.id} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${m.type==="entree"?"#4ADE8020":"#FF6B6B20"}`,display:"flex",gap:12,alignItems:"flex-start"}}>
-              <div style={{width:36,height:36,borderRadius:10,background:m.type==="entree"?"#0D3B2E":"#1A0800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
-                {m.type==="entree"?"📥":"📤"}
-              </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
-                  <p style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.produitNom}</p>
-                  <span style={{color:m.type==="entree"?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>
-                    {m.type==="entree"?"+":"-"}{m.qte} {m.unite}
-                  </span>
+          {[...(stockMvts||[])].sort((a,b)=>(b.ts||0)-(a.ts||0)).map((m,i,arr)=>{
+            const prevDate = i>0?arr[i-1].date:null;
+            const showDateSep = m.date!==prevDate;
+            return (
+              <div key={m.id}>
+                {showDateSep&&(
+                  <div style={{display:"flex",alignItems:"center",gap:8,margin:"10px 0 8px"}}>
+                    <div style={{flex:1,height:1,background:"rgba(74,123,247,0.2)"}} />
+                    <span style={{fontSize:11,color:BLU2,fontWeight:700,letterSpacing:1,textTransform:"uppercase",background:DARK,padding:"2px 10px",borderRadius:99,border:`1px solid ${BDR}`}}>📅 {m.date}</span>
+                    <div style={{flex:1,height:1,background:"rgba(74,123,247,0.2)"}} />
+                  </div>
+                )}
+                <div style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${m.type==="entree"?"#4ADE8020":"#FF6B6B20"}`,display:"flex",gap:12,alignItems:"flex-start"}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:m.type==="entree"?"#0D3B2E":"#1A0800",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>
+                    {m.type==="entree"?"📥":"📤"}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                      <p style={{fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.produitNom}</p>
+                      <span style={{color:m.type==="entree"?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:13,flexShrink:0,marginLeft:8}}>
+                        {m.type==="entree"?"+":"-"}{m.qte} {m.unite}
+                      </span>
+                    </div>
+                    <p style={{fontSize:11,color:"#8892B0"}}>{m.heure} · {m.employeNom}</p>
+                    {m.stockAvant!==undefined&&<p style={{fontSize:10,color:"#8892B0",marginTop:2}}>{m.stockAvant} → {m.stockApres} {m.unite}</p>}
+                    {m.note&&<p style={{fontSize:11,color:"#FFB800",marginTop:3,fontStyle:"italic"}}>📝 {m.note}</p>}
+                  </div>
                 </div>
-                <p style={{fontSize:11,color:"#8892B0"}}>{m.date} {m.heure} · {m.employeNom}</p>
-                {m.stockAvant!==undefined&&<p style={{fontSize:10,color:"#8892B0",marginTop:2}}>{m.stockAvant} → {m.stockApres} {m.unite}</p>}
-                {m.note&&<p style={{fontSize:11,color:"#FFB800",marginTop:3,fontStyle:"italic"}}>📝 {m.note}</p>}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
