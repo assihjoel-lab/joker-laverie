@@ -2173,6 +2173,31 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
     setAddPts(""); flash(`✅ +${p} pts ajoutés à ${client.nom} !`);
   }
 
+  function recalculerPoints(cli){
+    // Recalcule les points depuis toutes les commandes du client
+    const cmdsCli = commandes.filter(c=>
+      c.client?.toLowerCase()===cli.nom?.toLowerCase() ||
+      (cli.tel&&cli.tel!=="—"&&c.tel===cli.tel) ||
+      (cli.codeClient&&c.codeClient===cli.codeClient)
+    );
+    const totalPts = cmdsCli.reduce((sum,c)=>sum+Math.floor((c.total||0)/100),0);
+    // Soustraire les points déjà dépensés en récompenses
+    const ptsDepenses = (cli.recompensesUtilisees||[]).reduce((s,r)=>s+(r.pts||0),0);
+    const newPts = Math.max(0, totalPts - ptsDepenses);
+    const diff = newPts - (cli.points||0);
+    const updated = {
+      ...cli,
+      points: newPts,
+      historique:[
+        {date:todayStr(), pts:diff, desc:`Recalcul automatique (${cmdsCli.length} commandes)`},
+        ...(cli.historique||[])
+      ]
+    };
+    setClients(prev=>prev.map(c=>c.id!==cli.id?c:updated));
+    if(upsertClient) upsertClient(updated);
+    flash(`✅ Points recalculés pour ${cli.nom} : ${cli.points||0} → ${newPts} pts (${diff>=0?"+":""}${diff})`);
+  }
+
   function appliquerReward(r){
     if(!client||client.points<r.pts) return;
     // 1. Déduire les points du client
@@ -2295,9 +2320,46 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                 <div style={{display:"flex",gap:8,marginBottom:10}}>
                   {[10,20,50,100].map(p=><button key={p} onClick={()=>setAddPts(String(p))} style={{flex:1,background:addPts===String(p)?`${BLU}40`:DARK,border:`1px solid ${addPts===String(p)?BLU2:BDR}`,borderRadius:10,padding:"10px 4px",color:addPts===String(p)?BLU2:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>+{p}</button>)}
                 </div>
-                <div style={{display:"flex",gap:10,marginBottom:14}}>
+                <div style={{display:"flex",gap:10,marginBottom:10}}>
                   <input type="number" value={addPts} onChange={e=>setAddPts(e.target.value)} placeholder="Nb pts" style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:CYAN,fontSize:18,fontWeight:700,outline:"none",textAlign:"center"}} />
                   <button onClick={ajouterPts} disabled={!addPts||parseInt(addPts)<=0} style={{flex:1,background:addPts?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"11px",color:addPts?"#fff":"#8892B0",fontWeight:700,cursor:addPts?"pointer":"not-allowed"}}>Ajouter</button>
+                </div>
+
+                {/* Recalcul automatique depuis les commandes */}
+                <div style={{background:"#1A0D00",borderRadius:12,padding:"12px 14px",marginBottom:14,border:"1px solid #FFB80030"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div>
+                      <p style={{fontSize:12,color:"#FFB800",fontWeight:700}}>🔄 Recalculer depuis les commandes</p>
+                      <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>
+                        Corrige les points en comptant toutes les commandes passées
+                      </p>
+                    </div>
+                    <button onClick={()=>recalculerPoints(client)}
+                      style={{background:"linear-gradient(135deg,#7B4A00,#FFB800)",border:"none",borderRadius:10,padding:"8px 14px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0,marginLeft:10}}>
+                      Recalculer
+                    </button>
+                  </div>
+                  {(()=>{
+                    const cmdsCli = commandes.filter(c=>
+                      c.client?.toLowerCase()===client.nom?.toLowerCase()||
+                      (client.tel&&client.tel!=="—"&&c.tel===client.tel)||
+                      (client.codeClient&&c.codeClient===client.codeClient)
+                    );
+                    const totalPts = cmdsCli.reduce((sum,c)=>sum+Math.floor((c.total||0)/100),0);
+                    const ptsDepenses = (client.recompensesUtilisees||[]).reduce((s,r)=>s+(r.pts||0),0);
+                    const attendu = Math.max(0,totalPts-ptsDepenses);
+                    const ecart = attendu-(client.points||0);
+                    return (
+                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                        <span style={{fontSize:11,color:"#8892B0"}}>{cmdsCli.length} commande(s)</span>
+                        <span style={{fontSize:11,color:"#8892B0"}}>→ {attendu} pts attendus</span>
+                        {ecart!==0&&<span style={{fontSize:11,color:ecart>0?"#FF6B6B":"#4ADE80",fontWeight:700}}>
+                          Écart : {ecart>0?"+":""}{ecart} pts
+                        </span>}
+                        {ecart===0&&<span style={{fontSize:11,color:"#4ADE80",fontWeight:700}}>✅ Points corrects</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <STitle text="Accorder une récompense" />
