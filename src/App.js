@@ -1349,7 +1349,11 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const [showClotureMois,setShowClotureMois]=useState(false);
   const [nvCompteMois,setNvCompteMois]=useState("");
   const [nvNoteClotMois,setNvNoteClotMois]=useState("");
-  const [moisSelectionne,setMoisSelectionne]=useState(null); // "2025-06" etc.
+  const [moisSelectionne,setMoisSelectionne]=useState(null);
+  // Filtre dépenses par date
+  const [depDateDeb,setDepDateDeb]=useState("");
+  const [depDateFin,setDepDateFin]=useState("");
+  const [depCatFiltre,setDepCatFiltre]=useState("Toutes");
   const today=todayStr();
   const todayISO=new Date().toISOString().slice(0,10);
   const CATS_DEP=["Fournitures","Eau/Électricité","Salaire","Loyer","Transport","Autre"];
@@ -1532,12 +1536,73 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
     URL.revokeObjectURL(url);
   }
 
+  function exportJournalCaisse(){
+    // Grouper ventes + dépenses par date sur la période active
+    const periode = period==="today"?"Aujourd'hui":period==="week"?"7 derniers jours":period==="month"?"30 derniers jours":"Total";
+    const depFiltrees = depenses.filter(d=>filtered.map(c=>c.date).includes(d.date)||period==="all");
+    // Collecter toutes les dates
+    const allDates=[...new Set([...filtered.map(c=>c.date),...depFiltrees.map(d=>d.date)])].sort((a,b)=>{
+      const fa=a.split(" "); const fb=b.split(" ");
+      return 0; // garder ordre naturel
+    });
+    // Construire lignes HTML par date
+    const MOIS={"janv.":1,"févr.":2,"mars":3,"avr.":4,"mai":5,"juin":6,"juil.":7,"août":8,"sept.":9,"oct.":10,"nov.":11,"déc.":12};
+    const parseDate=s=>{const p=s.split(" ");return new Date(2025,((MOIS[p[1]]||1)-1),parseInt(p[0]));};
+    const datesTri=[...allDates].sort((a,b)=>parseDate(b)-parseDate(a));
+
+    let totalVentes=0,totalDep=0;
+    const sections=datesTri.map(date=>{
+      const ventes=filtered.filter(c=>c.date===date&&c.paiementConfirme);
+      const deps=depFiltrees.filter(d=>d.date===date);
+      const caJour=ventes.reduce((s,c)=>s+c.total,0);
+      const depJour=deps.reduce((s,d)=>s+(d.montant||0),0);
+      const benefJour=caJour-depJour;
+      totalVentes+=caJour; totalDep+=depJour;
+      const ventesRows=ventes.map(c=>`<tr><td style="padding:5px 8px;color:#1a3ebd;font-weight:700">${c.id}</td><td style="padding:5px 8px">${c.client}</td><td style="padding:5px 8px">${tarifs.find(t=>t.id===c.tarifId)?.label||"Service"}</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:#006b2b">+${c.total.toLocaleString("fr-FR")} F</td><td style="padding:5px 8px;text-align:center">${c.paiement}</td></tr>`).join("");
+      const depRows=deps.map(d=>`<tr style="background:#fff5f5"><td style="padding:5px 8px;color:#c0392b" colspan="2">💸 ${d.libelle}</td><td style="padding:5px 8px;color:#888">${d.categorie}</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:#c0392b">-${(d.montant||0).toLocaleString("fr-FR")} F</td><td></td></tr>`).join("");
+      return `<div style="margin-bottom:24px;border:1px solid #dde;border-radius:8px;overflow:hidden">
+        <div style="background:#1A3EBD;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+          <strong>📅 ${date}</strong>
+          <span>${ventes.length} vente(s) · Bénéfice : <strong style="color:${benefJour>=0?"#90ee90":"#ffaaaa"}">${benefJour>=0?"+":""}${benefJour.toLocaleString("fr-FR")} F</strong></span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#f0f4ff"><th style="padding:6px 8px;text-align:left">Ticket</th><th style="padding:6px 8px;text-align:left">Client</th><th style="padding:6px 8px;text-align:left">Service / Dépense</th><th style="padding:6px 8px;text-align:right">Montant</th><th style="padding:6px 8px;text-align:center">Mode</th></tr></thead>
+          <tbody>${ventesRows}${depRows}</tbody>
+          <tfoot><tr style="background:#f9f9f9;border-top:2px solid #dde">
+            <td colspan="3" style="padding:8px;font-weight:700">CA encaissé : ${caJour.toLocaleString("fr-FR")} F · Dépenses : ${depJour.toLocaleString("fr-FR")} F</td>
+            <td style="padding:8px;text-align:right;font-weight:700;color:${benefJour>=0?"#006b2b":"#c0392b"}">${benefJour>=0?"+":""}${benefJour.toLocaleString("fr-FR")} F</td>
+            <td></td>
+          </tr></tfoot>
+        </table></div>`;
+    }).join("");
+
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Journal de Caisse — JOKER Laverie</title>
+    <style>body{font-family:Arial,sans-serif;padding:20px;color:#111;max-width:900px;margin:0 auto}h1{color:#1A3EBD}.resume{display:flex;gap:16px;margin:16px 0;flex-wrap:wrap}.card{background:#f0f4ff;border-radius:8px;padding:12px 18px;flex:1;min-width:140px;text-align:center}.card .v{font-size:22px;font-weight:900;color:#1A3EBD}.card .l{font-size:12px;color:#666;margin-top:4px}@media print{button{display:none}}</style>
+    </head><body>
+    <h1>🃏 Journal de Caisse — JOKER Laverie & Service</h1>
+    <p>Période : <strong>${periode}</strong> · Généré le ${new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</p>
+    <div class="resume">
+      <div class="card"><div class="v">${totalVentes.toLocaleString("fr-FR")} F</div><div class="l">Total encaissé</div></div>
+      <div class="card"><div class="v" style="color:#c0392b">${totalDep.toLocaleString("fr-FR")} F</div><div class="l">Total dépenses</div></div>
+      <div class="card"><div class="v" style="color:${totalVentes-totalDep>=0?"#006b2b":"#c0392b"}">${(totalVentes-totalDep>=0?"+":"")}${(totalVentes-totalDep).toLocaleString("fr-FR")} F</div><div class="l">Bénéfice net</div></div>
+      <div class="card"><div class="v">${filtered.length}</div><div class="l">Commandes</div></div>
+    </div>
+    ${sections}
+    <button onclick="window.print()" style="margin-top:20px;background:#1A3EBD;color:#fff;border:none;padding:14px 28px;border-radius:8px;cursor:pointer;font-size:16px;font-weight:700">🖨️ Imprimer / Exporter en PDF</button>
+    </body></html>`;
+
+    const w=window.open("","_blank");
+    if(w){w.document.write(html);w.document.close();}
+    else{const blob=new Blob([html],{type:"text/html;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`journal-caisse-${period}-${todayStr()}.html`;a.click();URL.revokeObjectURL(url);}
+  }
+
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Caisse & Recettes</h2>
         <div style={{display:"flex",gap:6}}>
           <button onClick={()=>setVueMensuelle(v=>!v)} style={{background:vueMensuelle?`linear-gradient(135deg,${BLU},${BLU2})`:"#1A0D3D",border:`1px solid ${vueMensuelle?BLU2:"#A855F740"}`,borderRadius:10,padding:"7px 10px",color:vueMensuelle?"#fff":"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📅 Mois</button>
+          <button onClick={exportJournalCaisse} title="Journal de caisse (ventes + dépenses)" style={{background:"#1A0500",border:"1px solid #FF6B3540",borderRadius:10,padding:"7px 10px",color:"#FF6B35",fontWeight:700,fontSize:12,cursor:"pointer"}}>📒 Journal</button>
           <button onClick={exportCSV} title="Exporter Excel" style={{background:"#0D3B1A",border:"1px solid #4ADE8040",borderRadius:10,padding:"7px 10px",color:"#4ADE80",fontWeight:700,fontSize:12,cursor:"pointer"}}>📊 Excel</button>
           <button onClick={exportHTML} title="Exporter PDF" style={{background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:10,padding:"7px 10px",color:"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📄 PDF</button>
         </div>
@@ -1955,30 +2020,94 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
             }} style={{width:"100%",background:"linear-gradient(135deg,#7B0000,#C0392B)",border:"none",borderRadius:12,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>💸 Enregistrer la dépense</button>
           </div>
         )}
-        {/* Liste dépenses filtrées */}
+        {/* Liste dépenses filtrées — avec filtre par date et catégorie */}
         {(()=>{
-          const deps = depenses.filter(d=> period==="today"?d.date===today: period==="week"?getWeekDates().includes(d.date): period==="month"?getMonthDates().includes(d.date):true).sort((a,b)=>b.id.localeCompare(a.id));
+          // Filtre par plage de dates custom ou période globale
+          const MOIS={"janv.":1,"févr.":2,"mars":3,"avr.":4,"mai":5,"juin":6,"juil.":7,"août":8,"sept.":9,"oct.":10,"nov.":11,"déc.":12};
+          const parseStrDate=s=>{const p=(s||"").split(" ");return p.length===2?new Date(new Date().getFullYear(),((MOIS[p[1]]||1)-1),parseInt(p[0])):new Date(0);};
+          const dateDebISO = depDateDeb ? new Date(depDateDeb) : null;
+          const dateFinISO = depDateFin ? new Date(depDateFin) : null;
+          const deps = depenses.filter(d=>{
+            // Filtre catégorie
+            if(depCatFiltre!=="Toutes"&&d.categorie!==depCatFiltre) return false;
+            // Filtre plage custom
+            if(dateDebISO||dateFinISO){
+              const dd=parseStrDate(d.date);
+              if(dateDebISO&&dd<dateDebISO) return false;
+              if(dateFinISO&&dd>dateFinISO) return false;
+              return true;
+            }
+            // Sinon filtre période globale
+            return period==="today"?d.date===today:period==="week"?getWeekDates().includes(d.date):period==="month"?getMonthDates().includes(d.date):true;
+          }).sort((a,b)=>b.id.localeCompare(a.id));
           const totalDeps = deps.reduce((s,d)=>s+(d.montant||0),0);
-          if(deps.length===0) return <p style={{color:"#8892B0",fontSize:13,textAlign:"center",padding:"8px 0"}}>Aucune dépense sur cette période</p>;
+          const byCategorie = CATS_DEP.map(cat=>({cat,total:deps.filter(d=>d.categorie===cat).reduce((s,d)=>s+(d.montant||0),0),nb:deps.filter(d=>d.categorie===cat).length})).filter(c=>c.total>0);
+
           return <>
-            {deps.map(d=>(
-              <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BDR}`}}>
+            {/* Filtres date + catégorie */}
+            <div style={{background:DARK,borderRadius:14,padding:"12px 14px",marginBottom:10,border:`1px solid ${BDR}`}}>
+              <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>🔍 Filtrer les dépenses</p>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
                 <div style={{flex:1}}>
-                  <p style={{fontWeight:700,fontSize:13}}>{d.libelle}</p>
-                  <p style={{fontSize:11,color:"#8892B0"}}>{d.categorie} · {d.date}</p>
+                  <p style={{fontSize:10,color:"#8892B0",marginBottom:4}}>Du</p>
+                  <input type="date" value={depDateDeb} onChange={e=>setDepDateDeb(e.target.value)}
+                    style={{width:"100%",background:CARD,border:`1px solid ${depDateDeb?BLU2:BDR}`,borderRadius:10,padding:"8px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
                 </div>
-                <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>-{fmt(d.montant)} F</p>
-                <button onClick={()=>removeDepense(d.id)} style={{background:"none",border:"none",color:"#FF6B6B50",fontSize:16,cursor:"pointer",padding:"0 4px"}}>🗑️</button>
+                <div style={{flex:1}}>
+                  <p style={{fontSize:10,color:"#8892B0",marginBottom:4}}>Au</p>
+                  <input type="date" value={depDateFin} onChange={e=>setDepDateFin(e.target.value)}
+                    style={{width:"100%",background:CARD,border:`1px solid ${depDateFin?BLU2:BDR}`,borderRadius:10,padding:"8px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
+                </div>
+                {(depDateDeb||depDateFin)&&(
+                  <button onClick={()=>{setDepDateDeb("");setDepDateFin("");}}
+                    style={{alignSelf:"flex-end",background:"none",border:`1px solid ${BDR}`,borderRadius:10,padding:"8px 10px",color:"#8892B0",fontSize:12,cursor:"pointer"}}>✕</button>
+                )}
               </div>
-            ))}
-            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4}}>
-              <span style={{color:"#8892B0",fontSize:13}}>Total dépenses</span>
-              <span style={{color:"#FF6B6B",fontWeight:700,fontSize:14}}>-{fmt(totalDeps)} FCFA</span>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {["Toutes",...CATS_DEP].map(cat=>(
+                  <button key={cat} onClick={()=>setDepCatFiltre(cat)}
+                    style={{background:depCatFiltre===cat?`${BLU}40`:CARD,border:`1px solid ${depCatFiltre===cat?BLU2:BDR}`,borderRadius:20,padding:"5px 10px",color:depCatFiltre===cat?BLU2:"#8892B0",fontWeight:depCatFiltre===cat?700:400,fontSize:11,cursor:"pointer"}}>
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div style={{display:"flex",justifyContent:"space-between",paddingTop:6}}>
-              <span style={{color:"#8892B0",fontSize:13}}>Bénéfice net</span>
-              <span style={{color:ca-totalDeps>=0?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:14}}>{ca-totalDeps>=0?"+":""}{fmt(ca-totalDeps)} FCFA</span>
-            </div>
+
+            {/* Répartition par catégorie */}
+            {byCategorie.length>0&&(
+              <div style={{background:CARD,borderRadius:12,padding:"10px 14px",marginBottom:10,border:`1px solid ${BDR}`}}>
+                {byCategorie.map(c=>(
+                  <div key={c.cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${BDR}`}}>
+                    <span style={{fontSize:12,color:"#8892B0"}}>{c.cat} <span style={{fontSize:10}}>({c.nb})</span></span>
+                    <span style={{fontSize:12,color:"#FF6B6B",fontWeight:700}}>-{fmt(c.total)} F</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {deps.length===0
+              ? <p style={{color:"#8892B0",fontSize:13,textAlign:"center",padding:"8px 0"}}>Aucune dépense sur cette période</p>
+              : <>
+                {deps.map(d=>(
+                  <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BDR}`}}>
+                    <div style={{flex:1}}>
+                      <p style={{fontWeight:700,fontSize:13}}>{d.libelle}</p>
+                      <p style={{fontSize:11,color:"#8892B0"}}>{d.categorie} · {d.date}</p>
+                    </div>
+                    <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>-{fmt(d.montant)} F</p>
+                    <button onClick={()=>removeDepense(d.id)} style={{background:"none",border:"none",color:"#FF6B6B50",fontSize:16,cursor:"pointer",padding:"0 4px"}}>🗑️</button>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4}}>
+                  <span style={{color:"#8892B0",fontSize:13}}>Total dépenses</span>
+                  <span style={{color:"#FF6B6B",fontWeight:700,fontSize:14}}>-{fmt(totalDeps)} FCFA</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:6}}>
+                  <span style={{color:"#8892B0",fontSize:13}}>Bénéfice net</span>
+                  <span style={{color:ca-totalDeps>=0?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:14}}>{ca-totalDeps>=0?"+":""}{fmt(ca-totalDeps)} FCFA</span>
+                </div>
+              </>
+            }
           </>;
         })()}
       </div>
