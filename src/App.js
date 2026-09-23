@@ -3557,20 +3557,34 @@ useEffect(()=>{
 
   // Rappel automatique linge non récupéré depuis 3 jours
   useEffect(()=>{
-    const today = new Date();
+    const MOIS_FR={"janv.":0,"févr.":1,"mars":2,"avr.":3,"mai":4,"juin":5,"juil.":6,"août":7,"sept.":8,"oct.":9,"nov.":10,"déc.":11};
+    function parseDateFR(s){
+      if(!s) return null;
+      // Format ISO : "2026-06-29"
+      if(s.includes("-")) return new Date(s);
+      // Format français : "29 juin" ou "29 juin 2026"
+      const parts = s.trim().split(" ");
+      if(parts.length>=2){
+        const jour = parseInt(parts[0]);
+        const mois = MOIS_FR[parts[1]];
+        const annee = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+        if(!isNaN(jour) && mois!==undefined) return new Date(annee, mois, jour);
+      }
+      return null;
+    }
+    const now = new Date();
+    now.setHours(0,0,0,0);
     commandes.forEach(c=>{
-      if(c.statut==="Prêt"&&c.tel&&c.date){
-        const parts = c.date.split(" ");
-        // Parse date like "29 mai" or "2026-05-29"
-        const cmdDate = new Date(c.date.includes("-") ? c.date : Date.now());
-        const diffDays = Math.floor((today - cmdDate)/(1000*60*60*24));
-        if(diffDays===3){
-          // Check if reminder already sent (avoid duplicate)
-          const key = "rappel_"+c.id;
-          if(!localStorage.getItem(key)){
-            sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*%0A%0ABonjour ${c.client} !%0A%0A⚠️ Votre linge (${c.id}) est *prêt depuis 3 jours* et attend d'être récupéré.%0A%0APassez nous voir dès que possible.%0AMerci ! 🙏`);
-            localStorage.setItem(key,"sent");
-          }
+      if(c.statut!=="Prêt"||!c.tel||!c.date) return;
+      const cmdDate = parseDateFR(c.date);
+      if(!cmdDate) return;
+      cmdDate.setHours(0,0,0,0);
+      const diffDays = Math.floor((now - cmdDate)/(1000*60*60*24));
+      if(diffDays===3){
+        const key="rappel_"+c.id;
+        if(!localStorage.getItem(key)){
+          sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\nBonjour ${c.client} !\n\n⚠️ Votre linge (${c.id}) est *prêt depuis 3 jours* et attend d'être récupéré.\n\nPassez nous voir dès que possible.\nMerci ! 🙏`);
+          localStorage.setItem(key,"sent");
         }
       }
     });
