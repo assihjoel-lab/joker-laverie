@@ -958,6 +958,36 @@ function lignesCmd(c){
   if(c.panier&&c.panier.length>0) return c.panier.map(l=>({...l}));
   return [{tarifId:c.tarifId,label:c.serviceLabel||"Service",prix:c.tarif||0,type:c.tarifType||"kg",poids:c.poids||0,qte:c.qte||1,note:""}];
 }
+// Recalcule une commande (toutes les lignes du panier) après changement de poids confirmé ou de frais de livraison
+function recalcCmd(c,{newP,frais}={}){
+  const fraisAvant=c.livraison?(c.livraisonFrais||c.fraisLiv||LIVRAISON_TARIF_DEFAULT):0;
+  const fr=frais!==undefined?frais:fraisAvant;
+  let panier=(c.panier&&c.panier.length>0)?c.panier.map(l=>({...l})):null;
+  let sousAvant,sous,poids=c.poids;
+  if(!panier){
+    const calc=(pd)=>(c.tarifType==="unite")?Math.round((c.tarif||0)*(parseInt(c.qte)||1)):Math.round((parseFloat(pd)||0)*(c.tarif||0));
+    sousAvant=calc(c.poids);
+    if(newP!==undefined) poids=newP;
+    sous=calc(poids);
+  } else {
+    sousAvant=panier.reduce((a,l)=>a+montantLigne(l),0);
+    if(newP!==undefined){
+      const idx=panier.map((l,i)=>(l.type||"kg")==="kg"?i:-1).filter(i=>i>=0);
+      if(idx.length===1) panier[idx[0]].poids=newP;
+      else if(idx.length>1){
+        const old=idx.reduce((a,i)=>a+(parseFloat(panier[i].poids)||0),0);
+        idx.forEach((i,k)=>{panier[i].poids=old>0?Math.round(((parseFloat(panier[i].poids)||0)/old*newP)*100)/100:(k===0?newP:0);});
+      }
+    }
+    sous=panier.reduce((a,l)=>a+montantLigne(l),0);
+    poids=panier.reduce((a,l)=>a+((l.type||"kg")==="kg"?(parseFloat(l.poids)||0):0),0);
+  }
+  const remAvant=Math.round((sousAvant+fraisAvant)*(c.remise||0)/100);
+  const ajust=Math.max(0,(sousAvant+fraisAvant-remAvant)-(c.total||0)); // ex. réduction parrainage conservée
+  const rem=Math.round((sous+fr)*(c.remise||0)/100);
+  const total=Math.max(0,sous+fr-rem-ajust);
+  return {...c,...(panier?{panier}:{}),poids,total,points:Math.floor(total/100)};
+}
 function montantLigne(l){
   const kg=(l.type||"kg")==="kg";
   return Math.round((l.prix||0)*(kg?(parseFloat(l.poids!==undefined&&l.poids!==""?l.poids:l.qte)||0):(parseInt(l.qte)||0)));
@@ -3562,8 +3592,7 @@ useEffect(()=>{
   function confirmPoids(id,newP){
     setCommandes(p=>p.map(c=>{
       if(c.id!==id)return c;
-      const t=calcTotal(newP,c.tarif,c.livraison);
-      const updated={...c,poids:newP,total:t,points:Math.floor(t/100),poidsStatut:"confirmed"};
+      const updated={...recalcCmd(c,{newP}),poidsStatut:"confirmed"};
       upsertCmd(updated);
       return updated;
     }));
@@ -3571,9 +3600,7 @@ useEffect(()=>{
   function editFraisLiv(id,frais){
     setCommandes(p=>p.map(c=>{
       if(c.id!==id)return c;
-      const sousTotal=Math.round(parseFloat(c.poids)*c.tarif);
-      const total=sousTotal+frais;
-      const updated={...c,livraisonFrais:frais,total,points:Math.floor(total/100)};
+      const updated={...recalcCmd(c,{frais}),livraisonFrais:frais,fraisLiv:frais};
       upsertCmd(updated);
       return updated;
     }));
