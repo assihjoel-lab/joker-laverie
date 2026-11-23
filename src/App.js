@@ -984,6 +984,13 @@ function OrderDetailModal({ c,tarifs,onClose,onSave,onPrint }){
   const lab={fontSize:11,color:"#8892B0",textTransform:"uppercase",letterSpacing:1,marginBottom:6};
   const inp={width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:14,outline:"none"};
 
+  const [saved,setSaved]=useState(false);
+  function renvoyer(){
+    if(!c.tel) return;
+    const det=lignesCmd(c).map(l=>{const kg=(l.type||"kg")==="kg";const q=kg?(parseFloat(l.poids!==undefined&&l.poids!==""?l.poids:l.qte)||0)+"kg":(l.qte||1)+" pièce(s)";return `${kg?"⚖️":"👕"} ${l.label}: ${q} × ${fmt(l.prix||0)}F = ${fmt(montantLigne(l))}F`;}).join("\n");
+    const last=(c.modifs||[]).length>0?"\n✏️ *Commande mise à jour*\n":"\n";
+    sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n${last}\n🎫 Ticket : *${c.id}*\n👤 ${c.client}\n\n${det}\n${c.livraison?`🛵 Livraison : ${fmt(fraisCmd)}F\n`:""}${c.remise>0?`🎁 Remise : ${c.remise}%\n`:""}\n💰 *Total : ${fmt(c.total)} FCFA*\n${c.paiementConfirme?"✅ Payé":"⏳ Paiement en attente"}\n\nMerci de votre confiance ! 🙏`);
+  }
   function majLigne(i,patch){ setLignes(ls=>ls.map((l,k)=>k===i?{...l,...patch}:l)); }
   function ajouterLigne(){
     const t=tarifsDisp.find(x=>String(x.id)===String(addId)); if(!t) return;
@@ -1016,6 +1023,7 @@ function OrderDetailModal({ c,tarifs,onClose,onSave,onPrint }){
       livraisonStatut:livraison?(c.livraisonStatut||"pending"):null,
       remise:remPct,paiement,modifs:[...(c.modifs||[]),modif]};
     onSave(updated,c,modif.resume);
+    setSaved(true);
     setMode("view");
   }
 
@@ -1031,6 +1039,7 @@ function OrderDetailModal({ c,tarifs,onClose,onSave,onPrint }){
         </div>
 
         {mode==="view"&&(<>
+          {saved&&<div style={{background:"#0D3B2E",border:"1px solid #4ADE8050",borderRadius:12,padding:"10px 12px",marginBottom:10,fontSize:13,color:"#4ADE80",fontWeight:700}}>✅ Modifications enregistrées{c.tel?" — renvoie le ticket au client ci-dessous":""}</div>}
           <div style={box}>
             <p style={lab}>Client</p>
             <p style={{fontWeight:700,fontSize:16}}>{c.client}</p>
@@ -1087,6 +1096,7 @@ function OrderDetailModal({ c,tarifs,onClose,onSave,onPrint }){
           )}
 
           <div style={{display:"flex",gap:8,marginTop:6}}>
+            {c.tel&&<button onClick={renvoyer} style={{flex:2,background:saved?"linear-gradient(135deg,#0D3B1A,#006b2b)":"#0D3B1A",border:"1px solid #25D36650",borderRadius:14,color:"#25D366",fontWeight:700,fontSize:13,cursor:"pointer"}}>📲 Renvoyer</button>}
             <button onClick={()=>setMode("edit")} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>✏️ Modifier</button>
             <button onClick={()=>onPrint&&onPrint(c)} style={{flex:1,background:"#0D1F6E",border:`1px solid ${BLU2}40`,borderRadius:14,color:BLU2,fontWeight:700,cursor:"pointer"}}>🖨️</button>
             <button onClick={onClose} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Fermer</button>
