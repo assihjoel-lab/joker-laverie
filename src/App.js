@@ -125,6 +125,15 @@ async function nextTicketId(commandes=[]){
     return id;
   }
 }
+(function(){
+  if(typeof document==="undefined"||document.getElementById("joker-shine")) return;
+  const st=document.createElement("style"); st.id="joker-shine";
+  st.textContent="@keyframes jokerShine{0%{background-position:200% 0}100%{background-position:-200% 0}}@keyframes jokerGlow{0%,100%{box-shadow:0 0 6px rgba(255,184,0,0.5)}50%{box-shadow:0 0 18px rgba(255,215,0,0.95),0 0 30px rgba(255,184,0,0.5)}}@keyframes jokerWiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-12deg)}75%{transform:rotate(12deg)}}";
+  document.head.appendChild(st);
+})();
+// Effet « brillant » pour tout ce qui concerne un cadeau disponible
+const SHINE={background:"linear-gradient(110deg,#FFB800 25%,#FFF7C4 45%,#FFD700 55%,#FFB800 75%)",backgroundSize:"200% 100%",animation:"jokerShine 2s linear infinite, jokerGlow 1.6s ease-in-out infinite",color:"#0A0F1E"};
+const GLOW={animation:"jokerGlow 1.8s ease-in-out infinite"};
 function fmt(n)   { return Number(n).toLocaleString("fr-FR"); }
 function getLevel(pts) { return LEVEL_SEUILS.find(l=>pts>=l.min&&pts<=l.max)||LEVEL_SEUILS[0]; }
 function calcTotal(poids,tarif,livraison,fraisLivOverride,type="kg",qte=1){
@@ -2478,11 +2487,11 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
             const lv=getLevel(c.points);
             const rwds=rewards.filter(r=>c.points>=r.pts);
             return (
-              <div key={c.id} onClick={()=>setSel(c.id)} style={{display:"flex",alignItems:"center",gap:10,background:CARD,borderRadius:12,padding:"10px 12px",marginBottom:8,cursor:"pointer",border:`1px solid ${lv.color}30`}}>
+              <div key={c.id} onClick={()=>setSel(c.id)} style={{display:"flex",alignItems:"center",gap:10,background:CARD,borderRadius:12,padding:"10px 12px",marginBottom:8,cursor:"pointer",border:"1px solid #FFD70080",...GLOW}}>
                 <span style={{fontSize:18}}>{lv.label==="Bronze"?"🥉":lv.label==="Silver"?"🥈":lv.label==="Gold"?"🥇":"💎"}</span>
                 <div style={{flex:1}}>
                   <p style={{fontWeight:700,fontSize:13}}>{c.nom}</p>
-                  <p style={{fontSize:11,color:"#A855F7"}}>{rwds.map(r=>r.emoji+" "+r.label).join(" · ")}</p>
+                  <p style={{fontSize:11,color:"#FFD700",fontWeight:700}}>✨ {rwds.map(r=>r.emoji+" "+r.label).join(" · ")}</p>
                 </div>
                 <p style={{color:lv.color,fontWeight:700,fontSize:14}}>{c.points} pts</p>
               </div>
@@ -2522,11 +2531,11 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
         return (
           <div key={c.id} style={{position:"relative"}}>
             {hasReward&&!isOpen&&(
-              <div style={{position:"absolute",top:-8,right:12,zIndex:1,background:"#FFB800",color:"#0A0F1E",borderRadius:99,fontSize:10,fontWeight:700,padding:"3px 10px",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}>
-                🎁 Récompense dispo
+              <div style={{position:"absolute",top:-8,right:12,zIndex:1,...SHINE,borderRadius:99,fontSize:11,fontWeight:700,padding:"3px 12px"}}>
+                <span style={{display:"inline-block",animation:"jokerWiggle 1.2s ease-in-out infinite"}}>🎁</span> Récompense dispo
               </div>
             )}
-            <div onClick={()=>setSel(isOpen?null:c.id)} style={{background:isOpen?"#0D1F6E":CARD,borderRadius:isOpen?"18px 18px 0 0":18,padding:16,marginBottom:isOpen?0:10,border:`1px solid ${isOpen?BLU2:BDR}`,cursor:"pointer"}}>
+            <div onClick={()=>setSel(isOpen?null:c.id)} style={{background:isOpen?"#0D1F6E":CARD,borderRadius:isOpen?"18px 18px 0 0":18,padding:16,marginBottom:isOpen?0:10,border:`1px solid ${isOpen?BLU2:hasReward?"#FFD700":BDR}`,cursor:"pointer",...(hasReward&&!isOpen?GLOW:{})}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div style={{display:"flex",alignItems:"center",gap:12}}>
                   <div style={{width:44,height:44,borderRadius:12,background:`${lv.color}22`,border:`2px solid ${lv.color}60`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Bebas Neue',cursive",fontSize:18,color:lv.color}}>{lv.label[0]}</div>
@@ -2553,7 +2562,7 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                 {rewards.map(r=>{
                   const can=client.points>=r.pts;
                   return (
-                    <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${can?r.color+"30":BDR}`,opacity:can?1:0.5}}>
+                    <div key={r.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${can?"#FFD700":BDR}`,opacity:can?1:0.5,...(can?GLOW:{})}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
                         <span style={{fontSize:20}}>{r.emoji}</span>
                         <div>
@@ -2562,7 +2571,7 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                           {!can&&<p style={{fontSize:10,color:"#8892B0"}}>{r.pts-client.points} pts manquants</p>}
                         </div>
                       </div>
-                      <button onClick={()=>{ if(can) setConfirmReward(r); }} disabled={!can} style={{background:can?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:can?"#fff":"#8892B0",fontWeight:700,fontSize:12,cursor:can?"pointer":"not-allowed"}}>Accorder</button>
+                      <button onClick={()=>{ if(can) setConfirmReward(r); }} disabled={!can} style={can?{...SHINE,border:"none",borderRadius:10,padding:"8px 14px",fontWeight:700,fontSize:12,cursor:"pointer"}:{background:DARK,border:"none",borderRadius:10,padding:"8px 14px",color:"#8892B0",fontWeight:700,fontSize:12,cursor:"not-allowed"}}>🎁 Accorder</button>
                     </div>
                   );
                 })}
@@ -3174,8 +3183,28 @@ function HistoriqueFactures({ commandes, tarifs }) {
 
 
 // ─── BASE DE DONNÉES CLIENTS ──────────────────────────────
-function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
+function ClientsDB({ commandes, clients: clientsDB, upsertClient, upsertCmd, setCommandes, rewards }) {
   const [search, setSearch] = useState("");
+  const [editCli, setEditCli] = useState(false);
+  const [fNom, setFNom] = useState("");
+  const [fTel, setFTel] = useState("");
+  const minReward = (rewards&&rewards.length>0) ? Math.min(...rewards.map(r=>r.pts)) : Infinity;
+  function sauverClient(){
+    if(!selected||!fNom.trim()) return;
+    const nom=fNom.trim(); const tel=fTel.trim()||"—";
+    const rec=(clientsDB||[]).find(x=>x.id===selected.id);
+    if(upsertClient){
+      if(rec) upsertClient({...rec,nom,tel});
+      else upsertClient({id:"cli_"+Date.now(),nom,tel,email:"",adresse:"",notes:"",points:selected.points||0,dateCreation:todayStr(),historique:[],commandes:[],totalDepense:selected.totalDepense||0,codeClient:"CLI-"+nom.toUpperCase().slice(0,3)+(tel.replace(/\D/g,"")||"0000").slice(-4),source:selected.source||""});
+    }
+    // Met aussi à jour le nom/téléphone sur toutes ses commandes
+    const ids=(selected.commandes||[]).map(c=>c.id);
+    const maj=(commandes||[]).filter(c=>ids.includes(c.id)).map(c=>({...c,client:nom,tel:tel==="—"?"":tel}));
+    maj.forEach(c=>upsertCmd&&upsertCmd(c));
+    if(setCommandes) setCommandes(p=>p.map(c=>ids.includes(c.id)?{...c,client:nom,tel:tel==="—"?"":tel}:c));
+    setSelected({...selected,nom,tel});
+    setEditCli(false);
+  }
   const [selected, setSelected] = useState(null);
   const [showStats, setShowStats] = useState(false);
 
@@ -3242,9 +3271,19 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
         <div style={{padding:"16px 20px",display:"flex",alignItems:"center",gap:12,borderBottom:`1px solid ${BDR}`}}>
           <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",fontSize:22}}>←</button>
           <div style={{flex:1}}>
-            <p style={{fontWeight:700,fontSize:17,color:"#F8FAFF"}}>{selected.nom}</p>
-            <p style={{fontSize:12,color:"#8892B0"}}>{selected.tel}</p>
+            {!editCli?(<>
+              <p style={{fontWeight:700,fontSize:17,color:"#F8FAFF"}}>{selected.nom}</p>
+              <p style={{fontSize:12,color:"#8892B0"}}>{selected.tel}</p>
+            </>):(<>
+              <input value={fNom} onChange={e=>setFNom(e.target.value)} placeholder="Nom" style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:8,padding:"7px 10px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:6}} />
+              <input value={fTel} onChange={e=>setFTel(e.target.value)} placeholder="Téléphone (ex: +22890123456)" style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:8,padding:"7px 10px",color:"#F8FAFF",fontSize:14,outline:"none",marginBottom:6}} />
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={sauverClient} style={{flex:1,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:8,padding:"7px",color:"#fff",fontWeight:700,cursor:"pointer"}}>💾 Enregistrer</button>
+                <button onClick={()=>setEditCli(false)} style={{background:DARK,border:`1px solid ${BDR}`,borderRadius:8,padding:"7px 12px",color:"#8892B0",cursor:"pointer"}}>✕</button>
+              </div>
+            </>)}
           </div>
+          {!editCli&&<button onClick={()=>{setFNom(selected.nom);setFTel(selected.tel==="—"?"":selected.tel);setEditCli(true);}} style={{background:"#0D1F6E",border:`1px solid ${BLU2}60`,borderRadius:10,color:CYAN,padding:"8px 10px",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>✏️</button>}
           {selected.tel!=="—"&&<button onClick={()=>window.open(`https://wa.me/${selected.tel.replace(/\D/g,"")}?text=${encodeURIComponent("🃏 Bonjour "+selected.nom+" ! Comment pouvons-nous vous aider ?")}`, "_blank")} style={{background:"#0D3B1A",border:"1px solid #25D36640",borderRadius:10,padding:"8px 12px",color:"#25D366",fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0}}>💬 WA</button>}
           <span style={{background:lvl.color+"33",color:lvl.color,borderRadius:99,padding:"4px 12px",fontSize:11,fontWeight:700,flexShrink:0}}>{lvl.label}</span>
         </div>
@@ -3255,8 +3294,8 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
             {l:"Total dépensé", v:selected.totalDepense.toLocaleString("fr-FR")+" F", c:CYAN},
             {l:"Points",     v:selected.points,                   c:"#FFD700"},
           ].map(s=>(
-            <div key={s.l} style={{background:CARD,borderRadius:14,padding:12,border:`1px solid ${BDR}`,textAlign:"center"}}>
-              <p style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}</p>
+            <div key={s.l} style={{background:CARD,borderRadius:14,padding:12,border:`1px solid ${s.l==="Points"&&selected.points>=minReward?"#FFD700":BDR}`,textAlign:"center",...(s.l==="Points"&&selected.points>=minReward?GLOW:{})}}>
+              <p style={{fontSize:18,fontWeight:700,color:s.c}}>{s.v}{s.l==="Points"&&selected.points>=minReward?" 🎁":""}</p>
               <p style={{fontSize:10,color:"#8892B0",marginTop:4}}>{s.l}</p>
             </div>
           ))}
@@ -3366,6 +3405,7 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
                 <span style={{fontSize:10,color:lvl.color,fontWeight:700,background:lvl.color+"22",borderRadius:99,padding:"2px 8px"}}>{lvl.label}</span>
               </div>
               <p style={{fontSize:12,color:"#8892B0",marginTop:2}}>{c.tel}</p>
+              {c.points>=minReward&&<span style={{...SHINE,borderRadius:99,fontSize:10,fontWeight:700,padding:"2px 9px",display:"inline-block",marginTop:4}}>🎁 Cadeau dispo</span>}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
                 <span style={{fontSize:12,color:CYAN}}>{c.commandes.length} commande{c.commandes.length>1?"s":""}</span>
                 {srcInfo && <span style={{fontSize:11,color:srcInfo.color}}>{srcInfo.emoji} {srcInfo.label}</span>}
@@ -4071,7 +4111,7 @@ useEffect(()=>{
         </div>
       )}
       {tab==="clients"&&(
-        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} clients={clients} upsertClient={upsertClient} /></div>
+        <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:"#4A7BF7",cursor:"pointer",padding:"16px 20px",fontSize:13,display:"flex",alignItems:"center",gap:8}}><span>←</span> Retour</button><ClientsDB commandes={commandes} clients={clients} upsertClient={upsertClient} upsertCmd={upsertCmd} setCommandes={setCommandes} rewards={rewards} /></div>
       )}
       {tab==="promos"&&(
         <div><button onClick={()=>setTab("plus")} style={{background:"none",border:"none",color:BLU2,cursor:"pointer",padding:"16px 20px",fontSize:14}}>← Retour</button><GestionPromos promos={promos} setPromos={setPromos} /></div>
