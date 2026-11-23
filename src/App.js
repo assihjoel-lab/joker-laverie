@@ -6,7 +6,7 @@ import { useFireCollection, useFireDoc } from "./hooks";
 
 // ── Mode hors-ligne Firebase ──────────────────────────────
 // Active le cache IndexedDB pour que l'app fonctionne sans internet
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import { getFirestore, enableIndexedDbPersistence, doc as fsDoc, runTransaction } from "firebase/firestore";
 (async()=>{
   try{
     await enableIndexedDbPersistence(getFirestore());
@@ -96,6 +96,34 @@ function genId(commandes=[]){
     .filter(n=>!isNaN(n));
   const next = nums.length>0 ? Math.max(...nums)+1 : 1;
   return "JK-"+String(next).padStart(3,"0");
+}
+// Numéro de ticket unique : compteur central Firestore (transaction) → jamais deux fois le même numéro,
+// même si deux téléphones créent une commande en même temps.
+async function nextTicketId(commandes=[]){
+  const nums=(commandes||[]).map(c=>parseInt((c.id||"").replace("JK-",""),10)).filter(n=>!isNaN(n));
+  const localMax=nums.length>0?Math.max(...nums):0;
+  const pad=n=>"JK-"+String(n).padStart(3,"0");
+  try{
+    const db=getFirestore();
+    const ref=fsDoc(db,"config","compteurTickets");
+    const n=await Promise.race([
+      runTransaction(db,async tx=>{
+        const snap=await tx.get(ref);
+        const cur=snap.exists()?(snap.data().n||0):0;
+        const next=Math.max(cur,localMax)+1;
+        tx.set(ref,{n:next});
+        return next;
+      }),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),4000))
+    ]);
+    return pad(n);
+  }catch(e){
+    // Hors-ligne : numéro local + lettre aléatoire pour éviter toute collision entre appareils
+    let id; let tries=0;
+    do{ id=pad(localMax+1)+String.fromCharCode(65+Math.floor(Math.random()*26)); tries++; }
+    while((commandes||[]).some(c=>c.id===id)&&tries<30);
+    return id;
+  }
 }
 function fmt(n)   { return Number(n).toLocaleString("fr-FR"); }
 function getLevel(pts) { return LEVEL_SEUILS.find(l=>pts>=l.min&&pts<=l.max)||LEVEL_SEUILS[0]; }
@@ -191,6 +219,7 @@ function PinScreen({ onSuccess, correctPin }){
 // ─── NOUVELLE COMMANDE ────────────────────────────────────
 function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClient,tarifs,promos,employeActif,produits,onAutoConsume,onBack,onCreated,onDone,template }){
   const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
+  const creatingRef = useRef(false);
 
   // Pré-remplissage depuis template (bouton "Recommander")
   const initNom     = template?.client||"";
@@ -275,8 +304,11 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     setParrainValide(parrain?parrain:false);
   }
 
-  function creer(){
+  async function creer(){
     if(!nom||panier.length===0||sousTotal===0) return;
+    if(creatingRef.current) return;
+    creatingRef.current=true;
+    const newId=await nextTicketId(commandes);
     const est=ESTIMATIONS.find(e=>e.id===estimation)||ESTIMATIONS[2];
     const heureRetrait=new Date(Date.now()+est.duree*3600000);
     const heureStr=estimation==="demain"?"demain matin vers 8h":estimation==="2j"?"après-demain matin":
@@ -285,7 +317,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     const poidsTotal=panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
     const existingCli = (clients||[]).find(cl=>cl.nom?.toLowerCase()===nom.trim().toLowerCase()||(tel&&cl.tel===tel.trim()));
     const codeClient = existingCli?.codeClient || ("CLI-"+nom.trim().toUpperCase().slice(0,3)+(tel.replace(/[^0-9]/g,"")||"0000").slice(-4));
-    const c={id:genId(commandes),client:nom,tel,codeClient,
+    const c={id:newId,client:nom,tel,codeClient,
       employeId:employeActif?.id||null, employeNom:employeActif?.nom||null,
       note:noteCommande||"",
       panier:panier.map(s=>({tarifId:s.tarifId,label:tarifsDisp.find(t=>t.id===s.tarifId)?.label||"",prix:tarifsDisp.find(t=>t.id===s.tarifId)?.prix||0,type:s.isKg?"kg":"unite",poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""})),
@@ -302,18 +334,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
       const services=panier.map(s=>tarifsDisp.find(t=>t.id===s.tarifId)?.label||"").join(", ");
       const cmdEntry = {id:c.id,date:c.date,total:c.total,poids:poidsTotal,statut:c.statut,service:services};
       if(existingCli) {
-        upsertClient({
-          ...existingCli,
-          codeClient,
-          points: (existingCli.points||0) + pts,
-          historique:[
-            cmdEntry,
-            {date:c.date, pts, desc:`Commande ${c.id}`},
-            ...(existingCli.historique||[])
-          ],
-          totalDepense:(existingCli.totalDepense||0)+c.total,
-          commandes:[cmdEntry,...(existingCli.commandes||[])]
-        });
+        upsertClient({...existingCli, codeClient, historique:[cmdEntry,...(existingCli.historique||[])], totalDepense:(existingCli.totalDepense||0)+c.total, commandes:[cmdEntry,...(existingCli.commandes||[])]});
       } else {
         upsertClient({id:"cli_"+c.id, nom:nom.trim(), tel:tel.trim()||"—", email:"", adresse:"", notes:"", points:c.points||0, dateCreation:todayStr(), historique:[cmdEntry], commandes:[cmdEntry], totalDepense:c.total, codeClient, source:source||""});
         // Récompense parrainage : +20 points au parrain
@@ -335,6 +356,7 @@ function NouvelleCommande({ commandes,setCommandes,upsertCmd,clients,upsertClien
     setNoteCommande("");
     setSource("");
     setTicket(c);
+    creatingRef.current=false;
     if(onCreated) onCreated(c);
   }
 
@@ -767,7 +789,7 @@ function QRCode({ value, size=120 }){
   );
 }
 
-function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel,onRecommander,onEdit }){
+function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDelete,onPrint,onEditFrais,hasTel,onRecommander,onOpen }){
   const [edit,setEdit]=useState(false);
   const [nvP,setNvP]=useState(String(c.poids));
   const [confirmRefus,setConfirmRefus]=useState(false);
@@ -786,7 +808,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         </div>
       )}
       <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-        <div style={{flex:1}}>
+        <div style={{flex:1,cursor:"pointer"}} onClick={onOpen}>
           <p style={{fontWeight:700,fontSize:15}}>{c.client} {c.typeRamassage&&<span style={{background:"#FF6B3520",color:"#FF6B35",borderRadius:6,padding:"1px 6px",fontSize:10,fontWeight:700,marginLeft:6}}>🧺 RAMASSAGE</span>}</p>
           <p style={{fontSize:12,color:"#8892B0"}}>{c.id} · {c.date} {c.livraison?"· 🛵":""}</p>
           {c.tel&&<p style={{fontSize:11,color:"#8892B0",marginTop:2}}>📞 {c.tel}</p>}
@@ -864,7 +886,6 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
         {c.paiementConfirme&&<span style={{background:"#0D3B2E",border:`1px solid ${CYAN}40`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700}}>✅ Payé</span>}
         {hasTel&&c.statut==="Prêt"&&<button onClick={onNotify} style={{background:"linear-gradient(135deg,#0D3B1A,#006b2b)",border:"1px solid #25D36640",borderRadius:10,color:"#25D366",padding:"7px 14px",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>💬 Notifier</button>}
         <button onClick={onPrint} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:BLU2,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>🖨️</button>
-        {c.statut!=="Récupéré"&&<button onClick={onEdit} style={{background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:10,color:"#A855F7",padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>✏️</button>}
         {nextLabel[c.statut]&&c.poidsStatut!=="estimated"&&c.statut==="En cours"&&<button onClick={onNext} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>{nextLabel[c.statut]}</button>}
         {c.statut==="Prêt"&&c.poidsStatut!=="estimated"&&!confirmRendu&&<button onClick={()=>setConfirmRendu(true)} style={{background:"#0D1F6E",border:`1px solid #4A7BF740`,borderRadius:10,color:CYAN,padding:"7px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>📦 Rendu</button>}
         {nextLabel[c.statut]&&c.poidsStatut==="estimated"&&<span style={{fontSize:11,color:"#FFB800"}}>⚠️ Confirmer poids</span>}
@@ -905,6 +926,7 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
       {/* Suppression avec confirmation */}
       {!confirmDel ? (
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",paddingTop:8}}>
+          <button onClick={onOpen} style={{background:"#0D1F6E",border:`1px solid ${BLU2}60`,borderRadius:10,color:CYAN,fontSize:11,cursor:"pointer",padding:"6px 10px",fontWeight:700,marginRight:6}}>👁️ Détails</button>
           <button onClick={onRecommander} style={{background:"none",border:`1px solid ${BLU2}40`,borderRadius:10,color:BLU2,fontSize:11,cursor:"pointer",padding:"6px 10px",fontWeight:700}}>🔁 Recommander</button>
           <button onClick={()=>setConfirmDel(true)} style={{background:"none",border:"none",color:"#8892B050",fontSize:11,cursor:"pointer",letterSpacing:0.5}}>🗑️ Supprimer</button>
         </div>
@@ -918,6 +940,223 @@ function CmdCard({ c,onNext,onConfirmPoids,onValLiv,onRefLiv,onNotify,onPay,onDe
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── DÉTAIL / MODIFICATION D'UNE COMMANDE ─────────────────
+function lignesCmd(c){
+  if(c.panier&&c.panier.length>0) return c.panier.map(l=>({...l}));
+  return [{tarifId:c.tarifId,label:c.serviceLabel||"Service",prix:c.tarif||0,type:c.tarifType||"kg",poids:c.poids||0,qte:c.qte||1,note:""}];
+}
+function montantLigne(l){
+  const kg=(l.type||"kg")==="kg";
+  return Math.round((l.prix||0)*(kg?(parseFloat(l.poids!==undefined&&l.poids!==""?l.poids:l.qte)||0):(parseInt(l.qte)||0)));
+}
+function OrderDetailModal({ c,tarifs,onClose,onSave,onPrint }){
+  const [mode,setMode]=useState("view");
+  const tarifsDisp=tarifs&&tarifs.length>0?tarifs:TARIFS_INIT;
+  const [client,setClient]=useState(c.client||"");
+  const [tel,setTel]=useState(c.tel||"");
+  const [note,setNote]=useState(c.note&&typeof c.note==="string"?c.note:"");
+  const [lignes,setLignes]=useState(()=>lignesCmd(c));
+  const [livraison,setLivraison]=useState(!!c.livraison);
+  const [frais,setFrais]=useState(String(c.livraisonFrais||c.fraisLiv||LIVRAISON_TARIF_DEFAULT));
+  const [remise,setRemise]=useState(String(c.remise||0));
+  const [paiement,setPaiement]=useState(c.paiement||"cash");
+  const [addId,setAddId]=useState("");
+
+  const fraisCmd=c.livraison?(c.livraisonFrais||c.fraisLiv||LIVRAISON_TARIF_DEFAULT):0;
+  const sousTotalCmd=lignesCmd(c).reduce((a,l)=>a+montantLigne(l),0);
+  const remiseCmd=Math.round((sousTotalCmd+fraisCmd)*(c.remise||0)/100);
+  // Ajustement conservé (ex. réduction parrainage) = écart entre le calcul et le total d'origine
+  const ajust=(sousTotalCmd+fraisCmd-remiseCmd)-(c.total||0);
+
+  const sousTotal=lignes.reduce((a,l)=>a+montantLigne(l),0);
+  const fraisN=livraison?(parseInt(frais)||0):0;
+  const remPct=Math.min(100,Math.max(0,parseFloat(remise)||0));
+  const remMontant=Math.round((sousTotal+fraisN)*remPct/100);
+  const totalNew=Math.max(0,sousTotal+fraisN-remMontant-(ajust>0?ajust:0));
+  const pay=PAIEMENTS.find(p=>p.id===(c.paiement))||null;
+  const heure=c.createdAt?new Date(c.createdAt).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}):"";
+
+  const box={background:DARK,borderRadius:14,padding:"12px 14px",marginBottom:10,border:`1px solid ${BDR}`};
+  const lab={fontSize:11,color:"#8892B0",textTransform:"uppercase",letterSpacing:1,marginBottom:6};
+  const inp={width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:10,padding:"10px 12px",color:"#F8FAFF",fontSize:14,outline:"none"};
+
+  function majLigne(i,patch){ setLignes(ls=>ls.map((l,k)=>k===i?{...l,...patch}:l)); }
+  function ajouterLigne(){
+    const t=tarifsDisp.find(x=>String(x.id)===String(addId)); if(!t) return;
+    const kg=(t.type||"kg")==="kg";
+    setLignes(ls=>[...ls,{tarifId:t.id,label:t.label,prix:t.prix,type:kg?"kg":"unite",poids:kg?0:0,qte:1,note:""}]);
+    setAddId("");
+  }
+  function enregistrer(){
+    if(!client.trim()||lignes.length===0||sousTotal===0) return;
+    const lig=lignes.map(l=>{
+      const kg=(l.type||"kg")==="kg";
+      return {...l,poids:kg?(parseFloat(l.poids!==undefined&&l.poids!==""?l.poids:l.qte)||0):0,qte:kg?1:(parseInt(l.qte)||1)};
+    });
+    const changes=[];
+    if(client.trim()!==c.client) changes.push("nom");
+    if(tel.trim()!==(c.tel||"")) changes.push("téléphone");
+    if(JSON.stringify(lig.map(l=>[l.tarifId,l.poids,l.qte]))!==JSON.stringify(lignesCmd(c).map(l=>[l.tarifId,l.poids,l.qte]))) changes.push("services/poids");
+    if(livraison!==!!c.livraison||fraisN!==fraisCmd) changes.push("livraison");
+    if(remPct!==(c.remise||0)) changes.push("remise");
+    if(paiement!==(c.paiement||"cash")) changes.push("mode de paiement");
+    if(note.trim()!==(c.note&&typeof c.note==="string"?c.note:"")) changes.push("note");
+    if(totalNew!==c.total) changes.push("total "+fmt(c.total)+"→"+fmt(totalNew)+" F");
+    const poidsTotal=lig.reduce((a,l)=>a+((l.type||"kg")==="kg"?l.poids:0),0);
+    const now=new Date();
+    const modif={ts:now.getTime(),date:todayStr(),heure:now.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}),resume:changes.length?changes.join(", "):"aucun changement"};
+    const updated={...c,client:client.trim(),tel:tel.trim(),
+      note:note.trim()||(typeof c.note==="number"?c.note:""),
+      panier:lig,poids:poidsTotal,total:totalNew,points:Math.floor(totalNew/100),
+      livraison,livraisonFrais:livraison?fraisN:0,fraisLiv:livraison?fraisN:0,
+      livraisonStatut:livraison?(c.livraisonStatut||"pending"):null,
+      remise:remPct,paiement,modifs:[...(c.modifs||[]),modif]};
+    onSave(updated,c,modif.resume);
+    setMode("view");
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:9998,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#0D1629",borderRadius:"24px 24px 0 0",padding:"20px 18px 28px",width:"100%",maxWidth:460,maxHeight:"92vh",overflowY:"auto",animation:"slideUp 0.3s ease"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+          <div>
+            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2}}>{mode==="view"?"🔎 Détail commande":"✏️ Modifier commande"}</p>
+            <p style={{fontSize:12,color:"#8892B0"}}>{c.id} · {c.date}{heure?" à "+heure:""}{c.employeNom?" · par "+c.employeNom:""}</p>
+          </div>
+          <button onClick={onClose} style={{background:CARD,border:`1px solid ${BDR}`,borderRadius:10,color:"#8892B0",padding:"6px 12px",cursor:"pointer",fontSize:14}}>✕</button>
+        </div>
+
+        {mode==="view"&&(<>
+          <div style={box}>
+            <p style={lab}>Client</p>
+            <p style={{fontWeight:700,fontSize:16}}>{c.client}</p>
+            {c.tel&&<p style={{fontSize:12,color:"#8892B0"}}>📞 {c.tel}</p>}
+            {c.codeClient&&<p style={{fontSize:11,color:"#8892B0"}}>Code : {c.codeClient}</p>}
+            <div style={{marginTop:6}}><Badge statut={c.statut} /></div>
+          </div>
+
+          <div style={box}>
+            <p style={lab}>Ce qui a été fait</p>
+            {lignesCmd(c).map((l,i)=>{
+              const kg=(l.type||"kg")==="kg";
+              const q=kg?(parseFloat(l.poids!==undefined&&l.poids!==""?l.poids:l.qte)||0)+" kg":(l.qte||1)+" pièce(s)";
+              return (
+                <div key={i} style={{padding:"8px 0",borderBottom:i<lignesCmd(c).length-1?`1px solid ${BDR}`:"none"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+                    <span style={{fontSize:14,fontWeight:600}}>{kg?"⚖️":"👕"} {l.label}</span>
+                    <span style={{color:CYAN,fontWeight:700,fontSize:14,flexShrink:0}}>{fmt(montantLigne(l))} F</span>
+                  </div>
+                  <p style={{fontSize:12,color:"#8892B0"}}>{q} × {fmt(l.prix||0)} F</p>
+                  {l.note&&<p style={{fontSize:11,color:"#FFB800",marginTop:2}}>📝 {l.note}</p>}
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={box}>
+            <p style={lab}>Montants</p>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{color:"#8892B0"}}>Sous-total</span><span>{fmt(sousTotalCmd)} F</span></div>
+            {c.livraison&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{color:"#A855F7"}}>🛵 Livraison</span><span>+ {fmt(fraisCmd)} F</span></div>}
+            {(c.remise>0)&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{color:"#4ADE80"}}>🎁 Remise {c.remise}%</span><span>− {fmt(remiseCmd)} F</span></div>}
+            {ajust>0&&<div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{color:"#4ADE80"}}>🎁 Autre réduction (parrainage)</span><span>− {fmt(ajust)} F</span></div>}
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:17,fontWeight:700,marginTop:6,paddingTop:8,borderTop:`1px solid ${BDR}`}}><span>Total</span><span style={{color:CYAN}}>{fmt(c.total)} F</span></div>
+            <p style={{fontSize:12,color:"#8892B0",marginTop:6}}>🏅 {c.points||0} points fidélité</p>
+          </div>
+
+          <div style={box}>
+            <p style={lab}>Paiement & suivi</p>
+            <p style={{fontSize:13,marginBottom:3}}>💳 {pay?pay.emoji+" "+pay.label:"Non précisé"} — {c.paiementConfirme?<span style={{color:"#4ADE80",fontWeight:700}}>✅ Payé</span>:<span style={{color:"#FFB800",fontWeight:700}}>⏳ Non payé</span>}</p>
+            <p style={{fontSize:13,marginBottom:3}}>⚖️ Poids {c.poidsStatut==="estimated"?"estimé (à confirmer)":"confirmé"} : {c.poids} kg</p>
+            {c.dureeEstimee&&<p style={{fontSize:13,marginBottom:3}}>⏱️ Délai : {c.dureeEstimee}</p>}
+            {c.livraison&&<p style={{fontSize:13,marginBottom:3}}>🛵 Livraison : {c.livraisonStatut==="confirmed"?"validée":c.livraisonStatut==="pending"?"en attente":c.livraisonStatut||"—"}{c.adresse?" · "+c.adresse:""}{c.livreurNom?" · "+c.livreurNom:""}</p>}
+            {c.typeRamassage&&<p style={{fontSize:13,marginBottom:3}}>🧺 Ramassage client</p>}
+          </div>
+
+          {c.note&&typeof c.note==="string"&&(
+            <div style={{...box,borderColor:"#FFB80040",background:"#1A1500"}}><p style={{...lab,color:"#FFB800"}}>Note</p><p style={{fontSize:13}}>{c.note}</p></div>
+          )}
+          {(c.modifs||[]).length>0&&(
+            <div style={box}>
+              <p style={lab}>Historique des modifications</p>
+              {[...(c.modifs||[])].reverse().map((m,i)=>(<p key={i} style={{fontSize:12,color:"#8892B0",marginBottom:3}}>✏️ {m.date} {m.heure} — {m.resume}</p>))}
+            </div>
+          )}
+
+          <div style={{display:"flex",gap:8,marginTop:6}}>
+            <button onClick={()=>setMode("edit")} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>✏️ Modifier</button>
+            <button onClick={()=>onPrint&&onPrint(c)} style={{flex:1,background:"#0D1F6E",border:`1px solid ${BLU2}40`,borderRadius:14,color:BLU2,fontWeight:700,cursor:"pointer"}}>🖨️</button>
+            <button onClick={onClose} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Fermer</button>
+          </div>
+        </>)}
+
+        {mode==="edit"&&(<>
+          <div style={box}>
+            <p style={lab}>Client</p>
+            <input value={client} onChange={e=>setClient(e.target.value)} placeholder="Nom" style={{...inp,marginBottom:8}} />
+            <input value={tel} onChange={e=>setTel(e.target.value)} placeholder="Téléphone" style={inp} />
+          </div>
+          <div style={box}>
+            <p style={lab}>Services</p>
+            {lignes.map((l,i)=>{
+              const kg=(l.type||"kg")==="kg";
+              return (
+                <div key={i} style={{marginBottom:10,paddingBottom:10,borderBottom:`1px solid ${BDR}`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                    <span style={{fontSize:13,fontWeight:600}}>{kg?"⚖️":"👕"} {l.label} · {fmt(l.prix||0)} F</span>
+                    <button onClick={()=>setLignes(ls=>ls.filter((_,k)=>k!==i))} style={{background:"none",border:"none",color:"#FF6B6B",cursor:"pointer",fontSize:12}}>🗑️ Retirer</button>
+                  </div>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input type="number" min="0" step={kg?"0.5":"1"} value={kg?(l.poids!==undefined&&l.poids!==""?l.poids:l.qte):l.qte}
+                      onChange={e=>majLigne(i,kg?{poids:e.target.value}:{qte:e.target.value})} style={{...inp,textAlign:"center",fontWeight:700}} />
+                    <span style={{fontSize:12,color:"#8892B0",flexShrink:0}}>{kg?"kg":"pièce(s)"}</span>
+                    <span style={{color:CYAN,fontWeight:700,fontSize:13,flexShrink:0,minWidth:70,textAlign:"right"}}>{fmt(montantLigne(l))} F</span>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{display:"flex",gap:8}}>
+              <select value={addId} onChange={e=>setAddId(e.target.value)} style={{...inp,flex:1}}>
+                <option value="">+ Ajouter un service…</option>
+                {tarifsDisp.map(t=><option key={t.id} value={t.id}>{t.label} — {fmt(t.prix)} F</option>)}
+              </select>
+              <button onClick={ajouterLigne} disabled={!addId} style={{background:addId?BLU2:CARD,border:"none",borderRadius:10,color:"#fff",padding:"0 16px",fontWeight:700,cursor:"pointer"}}>OK</button>
+            </div>
+          </div>
+          <div style={box}>
+            <p style={lab}>Livraison, remise, paiement</p>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,marginBottom:8}}>
+              <input type="checkbox" checked={livraison} onChange={e=>setLivraison(e.target.checked)} /> 🛵 Livraison
+              {livraison&&<input type="number" value={frais} onChange={e=>setFrais(e.target.value)} style={{...inp,width:100,marginLeft:"auto",textAlign:"center"}} />}
+            </label>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span style={{fontSize:13}}>🎁 Remise (%)</span>
+              <input type="number" min="0" max="100" value={remise} onChange={e=>setRemise(e.target.value)} style={{...inp,width:90,marginLeft:"auto",textAlign:"center"}} />
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              {PAIEMENTS.map(p=>(
+                <button key={p.id} onClick={()=>setPaiement(p.id)} style={{flex:1,background:paiement===p.id?p.color+"33":CARD,border:`2px solid ${paiement===p.id?p.color:BDR}`,borderRadius:12,padding:"8px 4px",color:"#F8FAFF",fontSize:12,fontWeight:700,cursor:"pointer"}}>{p.emoji} {p.label}</button>
+              ))}
+            </div>
+          </div>
+          <div style={box}>
+            <p style={lab}>Note</p>
+            <textarea value={note} onChange={e=>setNote(e.target.value)} rows={2} style={{...inp,resize:"none"}} />
+          </div>
+          <div style={{...box,borderColor:BLU2+"60"}}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4}}><span style={{color:"#8892B0"}}>Ancien total</span><span>{fmt(c.total)} F</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:18,fontWeight:700}}><span>Nouveau total</span><span style={{color:totalNew!==c.total?"#FFB800":CYAN}}>{fmt(totalNew)} F</span></div>
+            {c.paiementConfirme&&totalNew!==c.total&&<p style={{fontSize:11,color:"#FFB800",marginTop:6}}>⚠️ Cette commande est déjà payée : le total change, vérifie la différence avec le client.</p>}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={enregistrer} style={{flex:2,background:`linear-gradient(135deg,${BLU},${BLU2})`,border:"none",borderRadius:14,padding:"13px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>💾 Enregistrer</button>
+            <button onClick={()=>setMode("view")} style={{flex:1,background:CARD,border:`1px solid ${BDR}`,borderRadius:14,color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Annuler</button>
+          </div>
+        </>)}
+      </div>
     </div>
   );
 }
@@ -1349,11 +1588,7 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
   const [showClotureMois,setShowClotureMois]=useState(false);
   const [nvCompteMois,setNvCompteMois]=useState("");
   const [nvNoteClotMois,setNvNoteClotMois]=useState("");
-  const [moisSelectionne,setMoisSelectionne]=useState(null);
-  // Filtre dépenses par date
-  const [depDateDeb,setDepDateDeb]=useState("");
-  const [depDateFin,setDepDateFin]=useState("");
-  const [depCatFiltre,setDepCatFiltre]=useState("Toutes");
+  const [moisSelectionne,setMoisSelectionne]=useState(null); // "2025-06" etc.
   const today=todayStr();
   const todayISO=new Date().toISOString().slice(0,10);
   const CATS_DEP=["Fournitures","Eau/Électricité","Salaire","Loyer","Transport","Autre"];
@@ -1536,73 +1771,12 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
     URL.revokeObjectURL(url);
   }
 
-  function exportJournalCaisse(){
-    // Grouper ventes + dépenses par date sur la période active
-    const periode = period==="today"?"Aujourd'hui":period==="week"?"7 derniers jours":period==="month"?"30 derniers jours":"Total";
-    const depFiltrees = depenses.filter(d=>filtered.map(c=>c.date).includes(d.date)||period==="all");
-    // Collecter toutes les dates
-    const allDates=[...new Set([...filtered.map(c=>c.date),...depFiltrees.map(d=>d.date)])].sort((a,b)=>{
-      const fa=a.split(" "); const fb=b.split(" ");
-      return 0; // garder ordre naturel
-    });
-    // Construire lignes HTML par date
-    const MOIS={"janv.":1,"févr.":2,"mars":3,"avr.":4,"mai":5,"juin":6,"juil.":7,"août":8,"sept.":9,"oct.":10,"nov.":11,"déc.":12};
-    const parseDate=s=>{const p=s.split(" ");return new Date(2025,((MOIS[p[1]]||1)-1),parseInt(p[0]));};
-    const datesTri=[...allDates].sort((a,b)=>parseDate(b)-parseDate(a));
-
-    let totalVentes=0,totalDep=0;
-    const sections=datesTri.map(date=>{
-      const ventes=filtered.filter(c=>c.date===date&&c.paiementConfirme);
-      const deps=depFiltrees.filter(d=>d.date===date);
-      const caJour=ventes.reduce((s,c)=>s+c.total,0);
-      const depJour=deps.reduce((s,d)=>s+(d.montant||0),0);
-      const benefJour=caJour-depJour;
-      totalVentes+=caJour; totalDep+=depJour;
-      const ventesRows=ventes.map(c=>`<tr><td style="padding:5px 8px;color:#1a3ebd;font-weight:700">${c.id}</td><td style="padding:5px 8px">${c.client}</td><td style="padding:5px 8px">${tarifs.find(t=>t.id===c.tarifId)?.label||"Service"}</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:#006b2b">+${c.total.toLocaleString("fr-FR")} F</td><td style="padding:5px 8px;text-align:center">${c.paiement}</td></tr>`).join("");
-      const depRows=deps.map(d=>`<tr style="background:#fff5f5"><td style="padding:5px 8px;color:#c0392b" colspan="2">💸 ${d.libelle}</td><td style="padding:5px 8px;color:#888">${d.categorie}</td><td style="padding:5px 8px;text-align:right;font-weight:700;color:#c0392b">-${(d.montant||0).toLocaleString("fr-FR")} F</td><td></td></tr>`).join("");
-      return `<div style="margin-bottom:24px;border:1px solid #dde;border-radius:8px;overflow:hidden">
-        <div style="background:#1A3EBD;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
-          <strong>📅 ${date}</strong>
-          <span>${ventes.length} vente(s) · Bénéfice : <strong style="color:${benefJour>=0?"#90ee90":"#ffaaaa"}">${benefJour>=0?"+":""}${benefJour.toLocaleString("fr-FR")} F</strong></span>
-        </div>
-        <table style="width:100%;border-collapse:collapse;font-size:13px">
-          <thead><tr style="background:#f0f4ff"><th style="padding:6px 8px;text-align:left">Ticket</th><th style="padding:6px 8px;text-align:left">Client</th><th style="padding:6px 8px;text-align:left">Service / Dépense</th><th style="padding:6px 8px;text-align:right">Montant</th><th style="padding:6px 8px;text-align:center">Mode</th></tr></thead>
-          <tbody>${ventesRows}${depRows}</tbody>
-          <tfoot><tr style="background:#f9f9f9;border-top:2px solid #dde">
-            <td colspan="3" style="padding:8px;font-weight:700">CA encaissé : ${caJour.toLocaleString("fr-FR")} F · Dépenses : ${depJour.toLocaleString("fr-FR")} F</td>
-            <td style="padding:8px;text-align:right;font-weight:700;color:${benefJour>=0?"#006b2b":"#c0392b"}">${benefJour>=0?"+":""}${benefJour.toLocaleString("fr-FR")} F</td>
-            <td></td>
-          </tr></tfoot>
-        </table></div>`;
-    }).join("");
-
-    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Journal de Caisse — JOKER Laverie</title>
-    <style>body{font-family:Arial,sans-serif;padding:20px;color:#111;max-width:900px;margin:0 auto}h1{color:#1A3EBD}.resume{display:flex;gap:16px;margin:16px 0;flex-wrap:wrap}.card{background:#f0f4ff;border-radius:8px;padding:12px 18px;flex:1;min-width:140px;text-align:center}.card .v{font-size:22px;font-weight:900;color:#1A3EBD}.card .l{font-size:12px;color:#666;margin-top:4px}@media print{button{display:none}}</style>
-    </head><body>
-    <h1>🃏 Journal de Caisse — JOKER Laverie & Service</h1>
-    <p>Période : <strong>${periode}</strong> · Généré le ${new Date().toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})}</p>
-    <div class="resume">
-      <div class="card"><div class="v">${totalVentes.toLocaleString("fr-FR")} F</div><div class="l">Total encaissé</div></div>
-      <div class="card"><div class="v" style="color:#c0392b">${totalDep.toLocaleString("fr-FR")} F</div><div class="l">Total dépenses</div></div>
-      <div class="card"><div class="v" style="color:${totalVentes-totalDep>=0?"#006b2b":"#c0392b"}">${(totalVentes-totalDep>=0?"+":"")}${(totalVentes-totalDep).toLocaleString("fr-FR")} F</div><div class="l">Bénéfice net</div></div>
-      <div class="card"><div class="v">${filtered.length}</div><div class="l">Commandes</div></div>
-    </div>
-    ${sections}
-    <button onclick="window.print()" style="margin-top:20px;background:#1A3EBD;color:#fff;border:none;padding:14px 28px;border-radius:8px;cursor:pointer;font-size:16px;font-weight:700">🖨️ Imprimer / Exporter en PDF</button>
-    </body></html>`;
-
-    const w=window.open("","_blank");
-    if(w){w.document.write(html);w.document.close();}
-    else{const blob=new Blob([html],{type:"text/html;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=`journal-caisse-${period}-${todayStr()}.html`;a.click();URL.revokeObjectURL(url);}
-  }
-
   return (
     <div style={{padding:"20px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h2 style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,letterSpacing:2}}>Caisse & Recettes</h2>
         <div style={{display:"flex",gap:6}}>
           <button onClick={()=>setVueMensuelle(v=>!v)} style={{background:vueMensuelle?`linear-gradient(135deg,${BLU},${BLU2})`:"#1A0D3D",border:`1px solid ${vueMensuelle?BLU2:"#A855F740"}`,borderRadius:10,padding:"7px 10px",color:vueMensuelle?"#fff":"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📅 Mois</button>
-          <button onClick={exportJournalCaisse} title="Journal de caisse (ventes + dépenses)" style={{background:"#1A0500",border:"1px solid #FF6B3540",borderRadius:10,padding:"7px 10px",color:"#FF6B35",fontWeight:700,fontSize:12,cursor:"pointer"}}>📒 Journal</button>
           <button onClick={exportCSV} title="Exporter Excel" style={{background:"#0D3B1A",border:"1px solid #4ADE8040",borderRadius:10,padding:"7px 10px",color:"#4ADE80",fontWeight:700,fontSize:12,cursor:"pointer"}}>📊 Excel</button>
           <button onClick={exportHTML} title="Exporter PDF" style={{background:"#1A0D3D",border:"1px solid #A855F740",borderRadius:10,padding:"7px 10px",color:"#A855F7",fontWeight:700,fontSize:12,cursor:"pointer"}}>📄 PDF</button>
         </div>
@@ -2020,94 +2194,30 @@ function Caisse({ commandes,tarifs,depenses=[],upsertDepense,removeDepense,objec
             }} style={{width:"100%",background:"linear-gradient(135deg,#7B0000,#C0392B)",border:"none",borderRadius:12,padding:"12px",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer"}}>💸 Enregistrer la dépense</button>
           </div>
         )}
-        {/* Liste dépenses filtrées — avec filtre par date et catégorie */}
+        {/* Liste dépenses filtrées */}
         {(()=>{
-          // Filtre par plage de dates custom ou période globale
-          const MOIS={"janv.":1,"févr.":2,"mars":3,"avr.":4,"mai":5,"juin":6,"juil.":7,"août":8,"sept.":9,"oct.":10,"nov.":11,"déc.":12};
-          const parseStrDate=s=>{const p=(s||"").split(" ");return p.length===2?new Date(new Date().getFullYear(),((MOIS[p[1]]||1)-1),parseInt(p[0])):new Date(0);};
-          const dateDebISO = depDateDeb ? new Date(depDateDeb) : null;
-          const dateFinISO = depDateFin ? new Date(depDateFin) : null;
-          const deps = depenses.filter(d=>{
-            // Filtre catégorie
-            if(depCatFiltre!=="Toutes"&&d.categorie!==depCatFiltre) return false;
-            // Filtre plage custom
-            if(dateDebISO||dateFinISO){
-              const dd=parseStrDate(d.date);
-              if(dateDebISO&&dd<dateDebISO) return false;
-              if(dateFinISO&&dd>dateFinISO) return false;
-              return true;
-            }
-            // Sinon filtre période globale
-            return period==="today"?d.date===today:period==="week"?getWeekDates().includes(d.date):period==="month"?getMonthDates().includes(d.date):true;
-          }).sort((a,b)=>b.id.localeCompare(a.id));
+          const deps = depenses.filter(d=> period==="today"?d.date===today: period==="week"?getWeekDates().includes(d.date): period==="month"?getMonthDates().includes(d.date):true).sort((a,b)=>b.id.localeCompare(a.id));
           const totalDeps = deps.reduce((s,d)=>s+(d.montant||0),0);
-          const byCategorie = CATS_DEP.map(cat=>({cat,total:deps.filter(d=>d.categorie===cat).reduce((s,d)=>s+(d.montant||0),0),nb:deps.filter(d=>d.categorie===cat).length})).filter(c=>c.total>0);
-
+          if(deps.length===0) return <p style={{color:"#8892B0",fontSize:13,textAlign:"center",padding:"8px 0"}}>Aucune dépense sur cette période</p>;
           return <>
-            {/* Filtres date + catégorie */}
-            <div style={{background:DARK,borderRadius:14,padding:"12px 14px",marginBottom:10,border:`1px solid ${BDR}`}}>
-              <p style={{fontSize:11,color:"#8892B0",letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>🔍 Filtrer les dépenses</p>
-              <div style={{display:"flex",gap:8,marginBottom:8}}>
+            {deps.map(d=>(
+              <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BDR}`}}>
                 <div style={{flex:1}}>
-                  <p style={{fontSize:10,color:"#8892B0",marginBottom:4}}>Du</p>
-                  <input type="date" value={depDateDeb} onChange={e=>setDepDateDeb(e.target.value)}
-                    style={{width:"100%",background:CARD,border:`1px solid ${depDateDeb?BLU2:BDR}`,borderRadius:10,padding:"8px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
+                  <p style={{fontWeight:700,fontSize:13}}>{d.libelle}</p>
+                  <p style={{fontSize:11,color:"#8892B0"}}>{d.categorie} · {d.date}</p>
                 </div>
-                <div style={{flex:1}}>
-                  <p style={{fontSize:10,color:"#8892B0",marginBottom:4}}>Au</p>
-                  <input type="date" value={depDateFin} onChange={e=>setDepDateFin(e.target.value)}
-                    style={{width:"100%",background:CARD,border:`1px solid ${depDateFin?BLU2:BDR}`,borderRadius:10,padding:"8px",color:"#F8FAFF",fontSize:13,outline:"none"}} />
-                </div>
-                {(depDateDeb||depDateFin)&&(
-                  <button onClick={()=>{setDepDateDeb("");setDepDateFin("");}}
-                    style={{alignSelf:"flex-end",background:"none",border:`1px solid ${BDR}`,borderRadius:10,padding:"8px 10px",color:"#8892B0",fontSize:12,cursor:"pointer"}}>✕</button>
-                )}
+                <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>-{fmt(d.montant)} F</p>
+                <button onClick={()=>removeDepense(d.id)} style={{background:"none",border:"none",color:"#FF6B6B50",fontSize:16,cursor:"pointer",padding:"0 4px"}}>🗑️</button>
               </div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["Toutes",...CATS_DEP].map(cat=>(
-                  <button key={cat} onClick={()=>setDepCatFiltre(cat)}
-                    style={{background:depCatFiltre===cat?`${BLU}40`:CARD,border:`1px solid ${depCatFiltre===cat?BLU2:BDR}`,borderRadius:20,padding:"5px 10px",color:depCatFiltre===cat?BLU2:"#8892B0",fontWeight:depCatFiltre===cat?700:400,fontSize:11,cursor:"pointer"}}>
-                    {cat}
-                  </button>
-                ))}
-              </div>
+            ))}
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4}}>
+              <span style={{color:"#8892B0",fontSize:13}}>Total dépenses</span>
+              <span style={{color:"#FF6B6B",fontWeight:700,fontSize:14}}>-{fmt(totalDeps)} FCFA</span>
             </div>
-
-            {/* Répartition par catégorie */}
-            {byCategorie.length>0&&(
-              <div style={{background:CARD,borderRadius:12,padding:"10px 14px",marginBottom:10,border:`1px solid ${BDR}`}}>
-                {byCategorie.map(c=>(
-                  <div key={c.cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:`1px solid ${BDR}`}}>
-                    <span style={{fontSize:12,color:"#8892B0"}}>{c.cat} <span style={{fontSize:10}}>({c.nb})</span></span>
-                    <span style={{fontSize:12,color:"#FF6B6B",fontWeight:700}}>-{fmt(c.total)} F</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {deps.length===0
-              ? <p style={{color:"#8892B0",fontSize:13,textAlign:"center",padding:"8px 0"}}>Aucune dépense sur cette période</p>
-              : <>
-                {deps.map(d=>(
-                  <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:`1px solid ${BDR}`}}>
-                    <div style={{flex:1}}>
-                      <p style={{fontWeight:700,fontSize:13}}>{d.libelle}</p>
-                      <p style={{fontSize:11,color:"#8892B0"}}>{d.categorie} · {d.date}</p>
-                    </div>
-                    <p style={{color:"#FF6B6B",fontWeight:700,fontSize:13}}>-{fmt(d.montant)} F</p>
-                    <button onClick={()=>removeDepense(d.id)} style={{background:"none",border:"none",color:"#FF6B6B50",fontSize:16,cursor:"pointer",padding:"0 4px"}}>🗑️</button>
-                  </div>
-                ))}
-                <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4}}>
-                  <span style={{color:"#8892B0",fontSize:13}}>Total dépenses</span>
-                  <span style={{color:"#FF6B6B",fontWeight:700,fontSize:14}}>-{fmt(totalDeps)} FCFA</span>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",paddingTop:6}}>
-                  <span style={{color:"#8892B0",fontSize:13}}>Bénéfice net</span>
-                  <span style={{color:ca-totalDeps>=0?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:14}}>{ca-totalDeps>=0?"+":""}{fmt(ca-totalDeps)} FCFA</span>
-                </div>
-              </>
-            }
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:6}}>
+              <span style={{color:"#8892B0",fontSize:13}}>Bénéfice net</span>
+              <span style={{color:ca-totalDeps>=0?"#4ADE80":"#FF6B6B",fontWeight:700,fontSize:14}}>{ca-totalDeps>=0?"+":""}{fmt(ca-totalDeps)} FCFA</span>
+            </div>
           </>;
         })()}
       </div>
@@ -2302,31 +2412,6 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
     setAddPts(""); flash(`✅ +${p} pts ajoutés à ${client.nom} !`);
   }
 
-  function recalculerPoints(cli){
-    // Recalcule les points depuis toutes les commandes du client
-    const cmdsCli = commandes.filter(c=>
-      c.client?.toLowerCase()===cli.nom?.toLowerCase() ||
-      (cli.tel&&cli.tel!=="—"&&c.tel===cli.tel) ||
-      (cli.codeClient&&c.codeClient===cli.codeClient)
-    );
-    const totalPts = cmdsCli.reduce((sum,c)=>sum+Math.floor((c.total||0)/100),0);
-    // Soustraire les points déjà dépensés en récompenses
-    const ptsDepenses = (cli.recompensesUtilisees||[]).reduce((s,r)=>s+(r.pts||0),0);
-    const newPts = Math.max(0, totalPts - ptsDepenses);
-    const diff = newPts - (cli.points||0);
-    const updated = {
-      ...cli,
-      points: newPts,
-      historique:[
-        {date:todayStr(), pts:diff, desc:`Recalcul automatique (${cmdsCli.length} commandes)`},
-        ...(cli.historique||[])
-      ]
-    };
-    setClients(prev=>prev.map(c=>c.id!==cli.id?c:updated));
-    if(upsertClient) upsertClient(updated);
-    flash(`✅ Points recalculés pour ${cli.nom} : ${cli.points||0} → ${newPts} pts (${diff>=0?"+":""}${diff})`);
-  }
-
   function appliquerReward(r){
     if(!client||client.points<r.pts) return;
     // 1. Déduire les points du client
@@ -2449,46 +2534,9 @@ function Fidelite({ clients,setClients,upsertClient,commandes,setCommandes,upser
                 <div style={{display:"flex",gap:8,marginBottom:10}}>
                   {[10,20,50,100].map(p=><button key={p} onClick={()=>setAddPts(String(p))} style={{flex:1,background:addPts===String(p)?`${BLU}40`:DARK,border:`1px solid ${addPts===String(p)?BLU2:BDR}`,borderRadius:10,padding:"10px 4px",color:addPts===String(p)?BLU2:"#8892B0",fontWeight:700,fontSize:13,cursor:"pointer"}}>+{p}</button>)}
                 </div>
-                <div style={{display:"flex",gap:10,marginBottom:10}}>
+                <div style={{display:"flex",gap:10,marginBottom:14}}>
                   <input type="number" value={addPts} onChange={e=>setAddPts(e.target.value)} placeholder="Nb pts" style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:12,padding:"11px",color:CYAN,fontSize:18,fontWeight:700,outline:"none",textAlign:"center"}} />
                   <button onClick={ajouterPts} disabled={!addPts||parseInt(addPts)<=0} style={{flex:1,background:addPts?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:12,padding:"11px",color:addPts?"#fff":"#8892B0",fontWeight:700,cursor:addPts?"pointer":"not-allowed"}}>Ajouter</button>
-                </div>
-
-                {/* Recalcul automatique depuis les commandes */}
-                <div style={{background:"#1A0D00",borderRadius:12,padding:"12px 14px",marginBottom:14,border:"1px solid #FFB80030"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                    <div>
-                      <p style={{fontSize:12,color:"#FFB800",fontWeight:700}}>🔄 Recalculer depuis les commandes</p>
-                      <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>
-                        Corrige les points en comptant toutes les commandes passées
-                      </p>
-                    </div>
-                    <button onClick={()=>recalculerPoints(client)}
-                      style={{background:"linear-gradient(135deg,#7B4A00,#FFB800)",border:"none",borderRadius:10,padding:"8px 14px",color:"#000",fontWeight:700,fontSize:12,cursor:"pointer",flexShrink:0,marginLeft:10}}>
-                      Recalculer
-                    </button>
-                  </div>
-                  {(()=>{
-                    const cmdsCli = commandes.filter(c=>
-                      c.client?.toLowerCase()===client.nom?.toLowerCase()||
-                      (client.tel&&client.tel!=="—"&&c.tel===client.tel)||
-                      (client.codeClient&&c.codeClient===client.codeClient)
-                    );
-                    const totalPts = cmdsCli.reduce((sum,c)=>sum+Math.floor((c.total||0)/100),0);
-                    const ptsDepenses = (client.recompensesUtilisees||[]).reduce((s,r)=>s+(r.pts||0),0);
-                    const attendu = Math.max(0,totalPts-ptsDepenses);
-                    const ecart = attendu-(client.points||0);
-                    return (
-                      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,color:"#8892B0"}}>{cmdsCli.length} commande(s)</span>
-                        <span style={{fontSize:11,color:"#8892B0"}}>→ {attendu} pts attendus</span>
-                        {ecart!==0&&<span style={{fontSize:11,color:ecart>0?"#FF6B6B":"#4ADE80",fontWeight:700}}>
-                          Écart : {ecart>0?"+":""}{ecart} pts
-                        </span>}
-                        {ecart===0&&<span style={{fontSize:11,color:"#4ADE80",fontWeight:700}}>✅ Points corrects</span>}
-                      </div>
-                    );
-                  })()}
                 </div>
 
                 <STitle text="Accorder une récompense" />
@@ -3322,192 +3370,6 @@ function ClientsDB({ commandes, clients: clientsDB, upsertClient }) {
   );
 }
 
-
-// ─── MODAL MODIFICATION COMMANDE ─────────────────────────
-function EditCmdModal({ c, tarifs, clients, upsertClient, onClose, onSave }){
-  const tarifsDisp = tarifs&&tarifs.length>0 ? tarifs : TARIFS_INIT;
-  const [panier, setPanier] = useState(
-    c.panier&&c.panier.length>0
-      ? c.panier.map(s=>({tarifId:s.tarifId,poids:s.type==="kg"?String(s.qte||s.poids||""):"",qte:s.type==="unite"?(s.qte||1):1,isKg:(s.type||"kg")==="kg",note:s.note||""}))
-      : [{tarifId:c.tarifId,poids:String(c.poids||""),qte:1,isKg:true,note:""}]
-  );
-  const [remisePct, setRemisePct] = useState(c.remise||0);
-  const [note, setNote] = useState(c.note||"");
-  const [servicesOpen, setServicesOpen] = useState(false);
-
-  const ancienTotal = c.total||0;
-  const ancienPts   = c.points||0;
-
-  function addService(tid){
-    const t=tarifsDisp.find(x=>x.id===tid); if(!t) return;
-    setPanier(p=>[...p,{tarifId:tid,poids:"",qte:1,isKg:(t.type||"kg")==="kg",note:""}]);
-  }
-  function removeService(idx){ setPanier(p=>p.filter((_,i)=>i!==idx)); }
-  function updateService(idx,field,val){ setPanier(p=>p.map((s,i)=>i===idx?{...s,[field]:val}:s)); }
-
-  const sousTotal = panier.reduce((acc,s)=>{
-    const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return acc;
-    return acc+(s.isKg?(s.poids?Math.round(parseFloat(s.poids)*t.prix):0):Math.round(parseInt(s.qte||1)*t.prix));
-  },0);
-  const frais      = c.livraison?(c.fraisLiv||LIVRAISON_TARIF_DEFAULT):0;
-  const remiseMont = Math.round((sousTotal+frais)*remisePct/100);
-  const total      = sousTotal+frais-remiseMont;
-  const nouveauxPts = Math.floor(total/100);
-  const diffPts     = nouveauxPts - ancienPts;
-
-  function sauvegarder(){
-    if(panier.length===0||sousTotal===0) return;
-    const firstTarif = tarifsDisp.find(t=>t.id===panier[0]?.tarifId)||tarifsDisp[0];
-    const poidsTotal = panier.reduce((a,s)=>a+(s.isKg?(parseFloat(s.poids)||0):0),0);
-    const updatedCmd = {
-      ...c,
-      panier: panier.map(s=>{
-        const t=tarifsDisp.find(x=>x.id===s.tarifId)||{label:"Service",prix:0};
-        return {tarifId:s.tarifId,label:t.label,prix:t.prix,type:s.isKg?"kg":"unite",
-          poids:s.isKg?(parseFloat(s.poids)||0):0,qte:s.isKg?1:(parseInt(s.qte)||1),note:s.note||""};
-      }),
-      poids:poidsTotal, tarifId:firstTarif.id, tarif:firstTarif.prix,
-      total, remise:remisePct, points:nouveauxPts, note,
-    };
-
-    // ── Recalcul des points du client ──
-    if(upsertClient && c.codeClient) {
-      const cli = (clients||[]).find(cl=>cl.codeClient===c.codeClient||cl.nom?.toLowerCase()===c.client?.toLowerCase());
-      if(cli && diffPts!==0) {
-        const newPts = Math.max(0,(cli.points||0)+diffPts);
-        upsertClient({
-          ...cli,
-          points: newPts,
-          historique:[
-            {date:todayStr(), pts:diffPts, desc:`Modification commande ${c.id} (${diffPts>0?"+":""}${diffPts} pts)`},
-            ...(cli.historique||[])
-          ]
-        });
-      }
-      // Mettre à jour le totalDepense du client
-      if(cli && ancienTotal!==total) {
-        const newTotal = Math.max(0,(cli.totalDepense||0)+(total-ancienTotal));
-        upsertClient({...cli, totalDepense:newTotal});
-      }
-    }
-
-    onSave(updatedCmd);
-  }
-
-  return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",padding:"16px 12px",overflowY:"auto"}}
-      onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div style={{width:"100%",maxWidth:420,background:"#0D1629",borderRadius:24,padding:"20px 18px 30px",border:`1px solid ${BLU2}40`}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <div>
-            <p style={{fontFamily:"'Bebas Neue',cursive",fontSize:22,letterSpacing:2}}>✏️ Modifier la commande</p>
-            <p style={{color:"#8892B0",fontSize:12,marginTop:2}}>{c.id} · {c.client}</p>
-          </div>
-          <button onClick={onClose} style={{background:"none",border:`1px solid ${BDR}`,borderRadius:10,color:"#8892B0",padding:"6px 12px",cursor:"pointer",fontSize:14}}>✕</button>
-        </div>
-
-        {/* Ajouter un service */}
-        <div style={{marginBottom:12}}>
-          <button onClick={()=>setServicesOpen(o=>!o)}
-            style={{width:"100%",background:servicesOpen?`linear-gradient(135deg,${BLU},${BLU2})`:CARD,border:`1px solid ${servicesOpen?BLU2:BDR}`,borderRadius:13,padding:"12px 16px",color:"#F8FAFF",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span>➕ Ajouter un service</span>
-            <span style={{fontSize:16,transform:servicesOpen?"rotate(180deg)":"rotate(0deg)",display:"inline-block",transition:"transform 0.2s"}}>▾</span>
-          </button>
-          {servicesOpen&&(
-            <div style={{background:"#141E35",border:`1px solid ${BLU2}60`,borderRadius:13,marginTop:6,overflow:"hidden"}}>
-              {tarifsDisp.map((tr,i)=>(
-                <div key={tr.id} onClick={()=>{addService(tr.id);setServicesOpen(false);}}
-                  style={{padding:"12px 16px",cursor:"pointer",borderBottom:i<tarifsDisp.length-1?`1px solid ${BDR}`:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#0D1F6E44"}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <span style={{fontWeight:700,fontSize:14}}>{(tr.type||"kg")==="kg"?"⚖️":"👕"} {tr.label}</span>
-                  <span style={{color:CYAN,fontWeight:700,fontSize:13}}>{fmt(tr.prix)} F/{(tr.type||"kg")==="kg"?"kg":"pièce"}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Panier éditable */}
-        {panier.map((s,idx)=>{
-          const t=tarifsDisp.find(x=>x.id===s.tarifId); if(!t) return null;
-          const ligneTotal=s.isKg?(s.poids?Math.round(parseFloat(s.poids)*t.prix):0):Math.round(parseInt(s.qte||1)*t.prix);
-          return (
-            <div key={idx} style={{background:CARD,borderRadius:14,padding:"12px 14px",marginBottom:8,border:`1px solid ${s.isKg?BDR:"rgba(168,85,247,0.25)"}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <span style={{fontWeight:700,fontSize:13,color:s.isKg?BLU2:"#A855F7"}}>{s.isKg?"⚖️":"👕"} {t.label}</span>
-                <button onClick={()=>removeService(idx)} style={{background:"none",border:"none",color:"#FF4444",fontSize:16,cursor:"pointer"}}>✕</button>
-              </div>
-              {s.isKg ? (
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <input type="number" step="0.5" value={s.poids} onChange={e=>updateService(idx,"poids",e.target.value)} placeholder="Poids (kg)"
-                    style={{flex:1,background:DARK,border:`1px solid ${BLU2}`,borderRadius:10,padding:"10px",color:CYAN,fontSize:20,fontWeight:700,outline:"none",textAlign:"center"}} />
-                  <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>kg × {fmt(t.prix)}F</span>
-                  {ligneTotal>0&&<span style={{color:CYAN,fontWeight:700,flexShrink:0}}>{fmt(ligneTotal)}F</span>}
-                </div>
-              ):(
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <button onClick={()=>updateService(idx,"qte",Math.max(1,(parseInt(s.qte)||1)-1))} style={{width:40,height:40,borderRadius:10,background:"#1A0A0A",border:"1px solid #FF444440",color:"#FF6B6B",fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>−</button>
-                  <input type="number" min="1" value={s.qte} onChange={e=>updateService(idx,"qte",Math.max(1,parseInt(e.target.value)||1))}
-                    style={{flex:1,background:DARK,border:"2px solid #A855F7",borderRadius:10,padding:"10px",color:"#A855F7",fontSize:20,fontWeight:700,outline:"none",textAlign:"center"}} />
-                  <button onClick={()=>updateService(idx,"qte",(parseInt(s.qte)||1)+1)} style={{width:40,height:40,borderRadius:10,background:"#0D1F6E",border:`1px solid ${BLU2}40`,color:BLU2,fontSize:20,fontWeight:700,cursor:"pointer",flexShrink:0}}>+</button>
-                  <span style={{color:"#8892B0",fontSize:12,flexShrink:0}}>× {fmt(t.prix)}F = <strong style={{color:"#A855F7"}}>{fmt(ligneTotal)}F</strong></span>
-                </div>
-              )}
-              <input type="text" value={s.note||""} onChange={e=>updateService(idx,"note",e.target.value)} placeholder="Note..."
-                style={{width:"100%",background:DARK,border:`1px solid ${BDR}`,borderRadius:10,padding:"7px 10px",color:"#F8FAFF",fontSize:12,outline:"none",marginTop:8,boxSizing:"border-box"}} />
-            </div>
-          );
-        })}
-
-        {/* Note générale */}
-        <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Note générale..." rows={2}
-          style={{width:"100%",background:CARD,border:`1px solid ${BDR}`,borderRadius:12,padding:"10px 12px",color:"#F8FAFF",fontSize:13,outline:"none",resize:"vertical",boxSizing:"border-box",fontFamily:"inherit",marginBottom:12}} />
-
-        {/* Réduction */}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
-          {[0,5,10,15,20].map(p=>(
-            <button key={p} onClick={()=>setRemisePct(p)}
-              style={{flex:1,background:remisePct===p?"linear-gradient(135deg,#4ADE80,#22C55E)":DARK,border:`1px solid ${remisePct===p?"#4ADE80":BDR}`,borderRadius:10,padding:"8px 4px",color:remisePct===p?"#000":"#8892B0",fontWeight:remisePct===p?700:400,fontSize:12,cursor:"pointer"}}>
-              {p===0?"Aucune":`-${p}%`}
-            </button>
-          ))}
-        </div>
-
-        {/* Récap total + impact points */}
-        {sousTotal>0&&(
-          <div style={{background:`linear-gradient(135deg,#0D1F6E,#1A3EBD22)`,borderRadius:16,padding:16,marginBottom:16,border:"1px solid rgba(0,194,255,0.3)"}}>
-            {(frais>0||remiseMont>0)&&<>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#8892B0",fontSize:13}}>Services</span><span>{fmt(sousTotal)} F</span></div>
-              {frais>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#8892B0",fontSize:13}}>Livraison</span><span style={{color:"#A855F7"}}>+{fmt(frais)} F</span></div>}
-              {remiseMont>0&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{color:"#4ADE80",fontSize:13}}>Réduction ({remisePct}%)</span><span style={{color:"#4ADE80",fontWeight:700}}>-{fmt(remiseMont)} F</span></div>}
-              <div style={{height:1,background:"rgba(255,255,255,0.08)",margin:"8px 0"}} />
-            </>}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{color:"#8892B0",fontSize:14}}>NOUVEAU TOTAL</span>
-              <span style={{fontFamily:"'Bebas Neue',cursive",fontSize:26,color:CYAN}}>{fmt(total)} FCFA</span>
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:12,color:"#8892B0"}}>Impact points client</span>
-              <span style={{fontSize:13,fontWeight:700,color:diffPts>=0?"#4ADE80":"#FF6B6B"}}>
-                {diffPts===0?"Inchangé":diffPts>0?`+${diffPts} pts`:diffPts+" pts"}
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:10}}>
-          <button onClick={onClose} style={{flex:1,background:DARK,border:`1px solid ${BDR}`,borderRadius:14,padding:"13px",color:"#8892B0",fontWeight:700,cursor:"pointer"}}>Annuler</button>
-          <button onClick={sauvegarder} disabled={panier.length===0||sousTotal===0}
-            style={{flex:2,background:panier.length>0&&sousTotal>0?`linear-gradient(135deg,${BLU},${BLU2})`:DARK,border:"none",borderRadius:14,padding:"13px",color:panier.length>0&&sousTotal>0?"#fff":"#8892B0",fontWeight:700,fontSize:15,cursor:panier.length>0&&sousTotal>0?"pointer":"not-allowed"}}>
-            💾 Sauvegarder
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── GÉRANT DASHBOARD ─────────────────────────────────────
 
 function GerantDashboard({ commandes,setCommandes,upsertCmd,removeCmd,upsertClient,removeClient,friperie,setFriperie,tarifs,setTarifs,rewards,setRewards,livreurs,setLivreurs,gerantPin,setGerantPin,adminPw,setAdminPw,clients,setClients,paiementConfig,savePaiementConfig,statutLaverie,saveStatutLaverie,depenses,upsertDepense,removeDepense,objectifJour,saveObjectifJour,promos,setPromos,clotures,upsertCloture,cloturesMensuelles,upsertClotureMensuelle,ventesFriperie,upsertVenteFriperie,employes,upsertEmploye,removeEmploye,journal,upsertJournal,produits,upsertProduit,removeProduit,stockMvts,upsertStockMvt,employeInitial,onLogout}){
@@ -3557,40 +3419,25 @@ useEffect(()=>{
 
   // Rappel automatique linge non récupéré depuis 3 jours
   useEffect(()=>{
-    const MOIS_FR={"janv.":0,"févr.":1,"mars":2,"avr.":3,"mai":4,"juin":5,"juil.":6,"août":7,"sept.":8,"oct.":9,"nov.":10,"déc.":11};
-    function parseDateFR(s){
-      if(!s) return null;
-      // Format ISO : "2026-06-29"
-      if(s.includes("-")) return new Date(s);
-      // Format français : "29 juin" ou "29 juin 2026"
-      const parts = s.trim().split(" ");
-      if(parts.length>=2){
-        const jour = parseInt(parts[0]);
-        const mois = MOIS_FR[parts[1]];
-        const annee = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
-        if(!isNaN(jour) && mois!==undefined) return new Date(annee, mois, jour);
-      }
-      return null;
-    }
-    const now = new Date();
-    now.setHours(0,0,0,0);
+    const today = new Date();
     commandes.forEach(c=>{
-      if(c.statut!=="Prêt"||!c.tel||!c.date) return;
-      const cmdDate = parseDateFR(c.date);
-      if(!cmdDate) return;
-      cmdDate.setHours(0,0,0,0);
-      const diffDays = Math.floor((now - cmdDate)/(1000*60*60*24));
-      if(diffDays===3){
-        const key="rappel_"+c.id;
-        if(!localStorage.getItem(key)){
-          sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*\n\nBonjour ${c.client} !\n\n⚠️ Votre linge (${c.id}) est *prêt depuis 3 jours* et attend d'être récupéré.\n\nPassez nous voir dès que possible.\nMerci ! 🙏`);
-          localStorage.setItem(key,"sent");
+      if(c.statut==="Prêt"&&c.tel&&c.date){
+        const parts = c.date.split(" ");
+        // Parse date like "29 mai" or "2026-05-29"
+        const cmdDate = new Date(c.date.includes("-") ? c.date : Date.now());
+        const diffDays = Math.floor((today - cmdDate)/(1000*60*60*24));
+        if(diffDays===3){
+          // Check if reminder already sent (avoid duplicate)
+          const key = "rappel_"+c.id;
+          if(!localStorage.getItem(key)){
+            sendWhatsApp(c.tel,`🃏 *JOKER Laverie & Service*%0A%0ABonjour ${c.client} !%0A%0A⚠️ Votre linge (${c.id}) est *prêt depuis 3 jours* et attend d'être récupéré.%0A%0APassez nous voir dès que possible.%0AMerci ! 🙏`);
+            localStorage.setItem(key,"sent");
+          }
         }
       }
     });
   },[commandes.length]);
   const [payCmd,setPayCmd]=useState(null);
-  const [editCmd,setEditCmd]=useState(null);
   const [cmdTemplate,setCmdTemplate]=useState(null); // pour "Recommander"
   const [globalSearch,setGlobalSearch]=useState(""); // recherche globale
   const [cmdSearch,setCmdSearch]=useState("");
@@ -3648,6 +3495,20 @@ useEffect(()=>{
       return updated;
     }));
   }
+  function modifierCommande(updated,ancien,resume){
+    setCommandes(p=>p.map(x=>x.id===updated.id?updated:x));
+    upsertCmd(updated);
+    const cli=(clients||[]).find(cl=>(ancien.codeClient&&cl.codeClient===ancien.codeClient)||cl.nom?.toLowerCase()===ancien.client?.toLowerCase());
+    if(cli&&upsertClient){
+      const maj=h=>h.id===updated.id?{...h,total:updated.total,poids:updated.poids,service:(updated.panier||[]).map(l=>l.label).join(", ")}:h;
+      upsertClient({...cli,
+        tel:updated.tel||cli.tel,
+        totalDepense:Math.max(0,(cli.totalDepense||0)+(updated.total-ancien.total)),
+        historique:(cli.historique||[]).map(maj),
+        commandes:(cli.commandes||[]).map(maj)});
+    }
+    logAction("modif_commande",updated.id+" modifiée : "+resume);
+  }
   function confirmPoids(id,newP){
     setCommandes(p=>p.map(c=>{
       if(c.id!==id)return c;
@@ -3691,6 +3552,7 @@ useEffect(()=>{
     setCommandes(p=>p.filter(c=>c.id!==id));
   }
   const [ticketModal,setTicketModal]=useState(null);
+  const [detailId,setDetailId]=useState(null);
   function confirmerPaiement(id,mode){
     setCommandes(p=>p.map(c=>{
       if(c.id!==id)return c;
@@ -3757,7 +3619,6 @@ useEffect(()=>{
         </div>
       </div>
     )}
-    {editCmd&&<EditCmdModal c={editCmd} tarifs={tarifs} clients={clients} upsertClient={upsertClient} onClose={()=>setEditCmd(null)} onSave={updated=>{setCommandes(p=>p.map(c=>c.id===updated.id?updated:c));upsertCmd(updated);logAction("modification",`${updated.client} · ${updated.id} · ${fmt(updated.total)} F`);setEditCmd(null);}} />}
     {payCmd&&<PayModal c={payCmd} onClose={()=>setPayCmd(null)} onConfirm={(m)=>confirmerPaiement(payCmd.id,m)} />}
 
       {/* ── POPUP NOTIFICATION AUTO LINGE PRÊT ── */}
@@ -3791,6 +3652,9 @@ useEffect(()=>{
         </div>
       )}
       {ticketModal&&<TicketModal c={ticketModal} tarifs={tarifs} onClose={()=>setTicketModal(null)} />}
+      {detailId&&commandes.find(x=>x.id===detailId)&&(
+        <OrderDetailModal key={detailId+"-"+((commandes.find(x=>x.id===detailId).modifs||[]).length)} c={commandes.find(x=>x.id===detailId)} tarifs={tarifs} onClose={()=>setDetailId(null)} onSave={modifierCommande} onPrint={cc=>{setDetailId(null);setTicketModal(cc);}} />
+      )}
       <div style={{position:"sticky",top:0,zIndex:50,background:"rgba(6,13,31,0.97)",backdropFilter:"blur(20px)",borderBottom:`1px solid ${BDR}`,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <Logo size={30} />
         {employeActif
@@ -4028,7 +3892,7 @@ useEffect(()=>{
                 lastDate=c.date;
               }
               elements.push(
-                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} onRecommander={()=>{setCmdTemplate(c);setTab("nouvelle");}} onEdit={()=>setEditCmd(c)} />
+                <CmdCard key={c.id} c={c} onNext={()=>nextStatut(c.id)} onConfirmPoids={confirmPoids} onValLiv={()=>validerLiv(c.id)} onRefLiv={()=>refuserLiv(c.id)} onNotify={()=>notifyReady(c)} onPay={()=>setPayCmd(c)} onDelete={()=>deleteCommande(c.id)} onPrint={()=>setTicketModal(c)} onEditFrais={editFraisLiv} hasTel={!!c.tel} onRecommander={()=>{setCmdTemplate(c);setTab("nouvelle");}} onOpen={()=>setDetailId(c.id)} />
               );
             });
             return elements;
@@ -4739,6 +4603,12 @@ function GestionStock({ produits, upsertProduit, removeProduit, stockMvts, upser
                       <div style={{flex:1}}>
                         <p style={{fontWeight:700,fontSize:14}}>{p.nom}</p>
                         <p style={{fontSize:11,color:"#8892B0",marginTop:2}}>{p.categorie} {p.prix>0?`· ${fmt(p.prix)} F/${p.unite}`:""}</p>
+                        {(()=>{
+                          const mv=(stockMvts||[]).filter(m=>String(m.produitId)===String(p.id)).sort((a,b)=>(b.ts||0)-(a.ts||0));
+                          const lastE=mv.find(m=>m.type==="entree"), lastS=mv.find(m=>m.type==="sortie");
+                          if(!lastE&&!lastS) return null;
+                          return <p style={{fontSize:10,color:"#8892B0",marginTop:3}}>{lastE&&<span style={{color:"#4ADE80"}}>📥 {lastE.date} {lastE.heure||""} (+{lastE.qte})</span>}{lastE&&lastS&&"  "}{lastS&&<span style={{color:"#FF6B6B"}}>📤 {lastS.date} {lastS.heure||""} (−{lastS.qte})</span>}</p>;
+                        })()}
                       </div>
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
